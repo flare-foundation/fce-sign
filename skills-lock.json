@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "create-extension": {
+      "source": "git@gitlab.com:flarenetwork/tee/extension-examples/sign.git",
+      "sourceType": "git",
+      "computedHash": "1fc037956d76b287afbb343ebc82ddcca1b52cb6d999de5316d99ab56f7d63ad"
+    }
+  }
+}

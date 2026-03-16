@@ -1,1 +1,14 @@
 .agents/
+tee-node/
+
+# Go
+vendor/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# TypeScript / Node
+node_modules/
+dist/

@@ -1,0 +1,312 @@
+openapi: 3.0.3
+info:
+  title: TEE Node Sign Server API
+  version: "1.0.0"
+  description: |
+    OpenAPI specification for the TEE node sign server used by extensions.
+servers:
+  - url: http://localhost:{SIGN_PORT}
+    description: Local node sign server
+    variables:
+      SIGN_PORT:
+        default: "8882"
+paths:
+  /key-info/{walletID}/{keyID}:
+    get:
+      summary: Get key existence proof for a wallet key
+      parameters:
+        - name: walletID
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^(0x)?[0-9a-fA-F]{64}$'
+          description: 32-byte hex hash (0x optional)
+        - name: keyID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Key identifier
+      responses:
+        '200':
+          description: Key existence proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyExistenceProof'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Wallet or key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sign/{walletID}/{keyID}:
+    post:
+      summary: Sign a message with a specific wallet key
+      parameters:
+        - name: walletID
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^(0x)?[0-9a-fA-F]{64}$'
+        - name: keyID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignRequest'
+      responses:
+        '200':
+          description: Signed message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Wallet or key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Signing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sign:
+    post:
+      summary: Sign a message with the TEE node's private key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignRequest'
+      responses:
+        '200':
+          description: Signed message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Signing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /result:
+    post:
+      summary: Post ActionResult back to node (used for async processing)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './json-schemas/actionresult.json'
+      responses:
+        '200':
+          description: OK (empty body)
+        '400':
+          description: Invalid ActionResult JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Proxy/posting error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /decrypt/{walletID}/{keyID}:
+    post:
+      summary: Decrypt a message with a specific wallet key
+      parameters:
+        - name: walletID
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^(0x)?[0-9a-fA-F]{64}$'
+        - name: keyID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecryptRequest'
+      responses:
+        '200':
+          description: Decrypted message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptResponse'
+        '400':
+          description: Invalid request or decryption failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Wallet or key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /decrypt:
+    post:
+      summary: Decrypt a message with the TEE node's private key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecryptRequest'
+      responses:
+        '200':
+          description: Decrypted message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptResponse'
+        '400':
+          description: Invalid request or decryption failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    SignRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]+$'
+      required: [message]
+      example:
+        message: "0xabcdef"
+
+    SignResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]+$'
+        signature:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]+$'
+      required: [message, signature]
+      example:
+        message: "0xabcdef"
+        signature: "0x1234..."
+
+    DecryptRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        encryptedMessage:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]+$'
+      required: [encryptedMessage]
+      example:
+        encryptedMessage: "0xdeadbeef"
+
+    DecryptResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        decryptedMessage:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]*$'
+      required: [decryptedMessage]
+      example:
+        decryptedMessage: "0x..."
+
+    KeyExistenceProof:
+      type: object
+      additionalProperties: true
+      properties:
+        exists:
+          type: boolean
+        teeId:
+          type: string
+          pattern: '^(0x)?[0-9a-fA-F]{40}$'
+        keyId:
+          type: integer
+        additionalInfo:
+          type: [object, "null"]
+      required: [exists]
+      example:
+        exists: true
+        teeId: "0x1234..."
+        keyId: 1
+        additionalInfo: null

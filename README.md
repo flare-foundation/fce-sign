@@ -14,10 +14,8 @@ This repository ships with skills for AI coding agents (Claude Code, opencode, a
 
 ### Install
 
-From within this repository:
-
 ```bash
-npx skills add .
+npx skills add https://gitlab.com/flarenetwork/tee/extension-examples/extension-scaffold
 ```
 
 This installs the skills into your agent's configuration directory. To update:

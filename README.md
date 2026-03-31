@@ -29,7 +29,7 @@ Each branch contains:
 - `contract/InstructionSender.sol` — the on-chain instruction sender contract
 - `Dockerfile` — multi-stage build for tee-node + extension
 - Unit tests
-=======
+
 Pick the language you're most comfortable with and work inside its directory.
 You should modify the files in `app/` and the shared
 `contract/InstructionSender.sol`. The files in `base/` are framework
@@ -56,9 +56,8 @@ npx skills add .
 
 `contract/InstructionSender.sol` is shared across all implementations. Update it
 to match your extension's OPType/OPCommand constants.
-<<<<<<< HEAD
->>>>>>> ba93f7d (feat: monorepo with Go, Python, and TypeScript implementations)
-=======
+
+
 
 ---
 

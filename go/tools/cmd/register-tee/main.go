@@ -23,7 +23,11 @@ func main() {
 	cf := flag.String("c", base.DefaultChainNodeURL, "chain node url")
 	pf := flag.String("p", base.DefaultExtensionProxyURL, "extension proxy url (local)")
 	hostF := flag.String("host", defaultHostURL, "on-chain host URL reachable by external TEEs (e.g. tunnel URL)")
-	epf := flag.String("ep", "https://tee-proxy-coston2-1.flare.rocks", "external proxy url for FTDC availability check (must be a production TEE on extension 0)")
+	defaultExternalProxy := os.Getenv("NORMAL_PROXY_URL")
+	if defaultExternalProxy == "" {
+		defaultExternalProxy = "https://tee-proxy-coston2-1.flare.rocks"
+	}
+	epf := flag.String("ep", defaultExternalProxy, "external proxy url for FTDC availability check (must be a production TEE on extension 0)")
 	lf := flag.Bool("l", false, "local")
 	instructionF := flag.String("i", "", "instructionID")
 	command := flag.String("command", "rap", "command (rap)")

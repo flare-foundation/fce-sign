@@ -1,0 +1,49 @@
+# Coston2 proxy config for the sign extension.
+#
+# Before running, replace the [db] placeholders with your C-chain indexer
+# credentials.  The proxy reads on-chain state from the indexer DB, not
+# directly from an RPC endpoint.
+#
+# Contract addresses below are from the Coston2 deployment of
+# flare-smart-contracts-v2 (branch tee-rebase).
+
+redis_port = "redis:6379"
+chain_id = 114
+private_key_variable = "PRIVATE_KEY"
+initial_signing_policy_offset = 3
+signing_policy_fetch_interval = "20s"
+
+[db]
+host = "35.233.36.8"
+port = 3306
+database = "indexer"
+username = "<your-db-username>"
+password = "<your-db-password>"
+log_queries = false
+
+# Local indexer — uncomment and replace the [db] section above if you prefer
+# to run your own indexer (see config/indexer/):
+# [db]
+# host = "indexer-db"
+# port = 3306
+# database = "db"
+# username = "root"
+# password = "root"
+# log_queries = false
+
+[addresses]
+flare_systems_manager = "0xA90Db6D10F856799b10ef2A77EBCbF460aC71e52"
+relay = "0xa10B672D1c62e5457b17af63d4302add6A99d7dE"
+voter_registry = "0x6a0AF07b7972177B176d3D422555cbc98DfDe914"
+
+[ports]
+internal = "6663"
+external = "6664"
+
+[info_timing]
+cycle_internal = "100s"
+cycle_queue_response_wait = "2s"
+
+[voting]
+proposal_expiration = "120s"
+max_pending_request = 10000

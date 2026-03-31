@@ -1,8 +1,14 @@
 .agents/
-tee-node/
+.claude/
 
 # Go
 vendor/
+# Environment files (contain secrets)
+.env
+config/proxy/extension_proxy.toml
+
+# Build output
+out/
 
 # Python
 __pycache__/

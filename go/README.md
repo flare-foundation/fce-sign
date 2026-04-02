@@ -75,7 +75,6 @@ tools/
 ### Prerequisites
 
 - Go >= 1.23
-- `abigen` (from go-ethereum, for regenerating bindings)
 - `.env` file at the repo root (copy from `.env.example`)
 
 ### Running the tools
@@ -119,11 +118,17 @@ go run ./cmd/run-test --instructionSender 0x<address> -p http://localhost:6676
 
 ### Regenerating contract bindings
 
-If you modify `contract/InstructionSender.sol`:
+If you modify `contract/InstructionSender.sol`, run the script from the repo root:
+
+```bash
+./scripts/generate-bindings.sh
+```
+
+Or manually:
 
 1. Compile with Foundry:
    ```bash
-   cd ../../contract && forge build --root . --contracts . --out out
+   cd contract && forge build --root . --contracts . --out out
    ```
 
 2. Extract ABI and BIN:

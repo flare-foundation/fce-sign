@@ -48,6 +48,8 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+      - path: ./config/extension.env
+        required: false
     environment:
       - INITIAL_OWNER=${INITIAL_OWNER:?Set INITIAL_OWNER in .env}
       - EXTENSION_ID=${EXTENSION_ID:?Set EXTENSION_ID in .env}

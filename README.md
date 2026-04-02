@@ -61,6 +61,52 @@ See [`go/README.md`](go/README.md#tools-gotools) for tool details.
 - A funded Coston2 wallet (needs C2FLR for gas + TEE registration fees)
 - Go >= 1.23 (for the deployment/registration tools in `go/tools/`)
 
+### Quick start (scripted)
+
+Once your environment is configured (steps 0 below), you can run the entire
+deploy → start → register → test flow with a single command:
+
+```bash
+./scripts/full-setup.sh --test
+```
+
+Or run each phase individually:
+
+```bash
+# 1. Deploy contract + register extension → writes config/extension.env
+./scripts/pre-build.sh
+
+# 2. Build and start Docker stack, wait for health
+./scripts/start-services.sh
+
+# 3. Register TEE version + TEE machine on-chain
+./scripts/post-build.sh
+
+# 4. Run the end-to-end test
+./scripts/test.sh
+
+# Stop everything
+./scripts/stop-services.sh
+```
+
+The scripts read configuration from `.env` and auto-detect the addresses file.
+`pre-build.sh` writes the generated `EXTENSION_ID` and `INSTRUCTION_SENDER` to
+`config/extension.env`, which all later scripts pick up automatically — no need
+to copy values into `.env` by hand.
+
+> **Note**: You still need to configure `.env` and
+> `config/proxy/extension_proxy.toml` before running the scripts (step 0 below),
+> and you still need a running tunnel with `TUNNEL_URL` set in `.env` before
+> post-build can register the TEE machine (step 4 in the manual flow).
+
+---
+
+### Manual steps
+
+The sections below walk through each step individually, which is useful for
+understanding the flow or debugging issues. The scripts above automate this
+same sequence.
+
 ### Step 0: Configure environment
 
 ```bash
@@ -241,7 +287,8 @@ To shut down all local services and prepare for a fresh start:
 ### Stop the Docker stack
 
 ```bash
-docker compose down
+./scripts/stop-services.sh
+# or: docker compose down
 ```
 
 This stops and removes all containers (redis, ext-proxy, extension-tee).
@@ -255,7 +302,7 @@ If you want to completely reset and follow the README from the beginning:
 docker compose down --rmi local
 
 # Clear environment state
-rm -f .env config/proxy/extension_proxy.toml
+rm -f .env config/proxy/extension_proxy.toml config/extension.env
 ```
 
 After a full reset, start again from [Step 0](#step-0-configure-environment).

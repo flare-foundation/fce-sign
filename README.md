@@ -11,25 +11,6 @@ your own extension, then deploy/register/test it on Coston2.
 
 ## For Hackathon Participants
 
-Pick the branch for your preferred language and use it as a starting point.
-Modify the files in `app/` and `contract/InstructionSender.sol` to build your
-own extension. The files in `base/` are framework infrastructure — you should
-not need to modify them. See the branch README for language-specific details.
-
-## Branches
-
-| Branch | Language |
-|--------|----------|
-| `go` | Go |
-| `python` | Python |
-| `typescript` | TypeScript |
-
-Each branch contains:
-- `extension/` — the extension server (`base/` = infrastructure, `app/` = your code)
-- `contract/InstructionSender.sol` — the on-chain instruction sender contract
-- `Dockerfile` — multi-stage build for tee-node + extension
-- Unit tests
-
 Pick the language you're most comfortable with and work inside its directory.
 You should modify the files in `app/` and the shared
 `contract/InstructionSender.sol`. The files in `base/` are framework
@@ -44,9 +25,9 @@ infrastructure -- you should not need to modify them.
 See each directory's `README.md` for details on the handler signature, what's
 provided by `base/`, and what files to change.
 
-### Agent skills
+### Agent skills (optional)
 
-Install the agent skills for guided extension development:
+Install the skill for agentic coding:
 
 ```bash
 npx skills add .
@@ -56,10 +37,6 @@ npx skills add .
 
 `contract/InstructionSender.sol` is shared across all implementations. Update it
 to match your extension's OPType/OPCommand constants.
-
-
-
----
 
 ## Deploying and Testing on Coston2
 

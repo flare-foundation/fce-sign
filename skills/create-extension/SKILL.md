@@ -180,8 +180,8 @@ Implement a state reporting function that converts your mutable state into a JSO
 
 The TEE node exposes signing, encryption, and decryption to your extension at `localhost:$SIGN_PORT`. See [references/openapi.yaml](references/openapi.yaml) for all endpoints. Key endpoints:
 
-- `POST /sign` -- sign with the TEE node's private key
-- `POST /sign/{walletID}/{keyID}` -- sign with a specific wallet key
+- `POST /sign` -- sign with the TEE node's private key (request/response use **base64** byte encoding, not hex)
+- `POST /sign/{walletID}/{keyID}` -- sign with a specific wallet key (request/response use **base64** byte encoding, not hex)
 - `POST /decrypt` -- decrypt with the TEE node's private key (request/response use **base64** byte encoding, not hex)
 - `GET /key-info/{walletID}/{keyID}` -- check key existence
 - `POST /result` -- post async ActionResult back to the node

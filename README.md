@@ -219,7 +219,8 @@ determines the required fee for each operation.
 Try restarting the proxy — it may have missed a signing policy round:
 
 ```bash
-docker compose restart ext-proxy
+docker compose down
+docker compose up -d
 ```
 
 If that doesn't help, the FDC attestation flow requires active relay providers

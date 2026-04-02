@@ -65,7 +65,7 @@ See [`go/README.md`](go/README.md#tools-gotools) for tool details.
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in PRIVATE_KEY, INITIAL_OWNER, etc.
+# Edit .env and fill in PRIVATE_KEY and INITIAL_OWNER.
 # Set LANGUAGE=go, LANGUAGE=python, or LANGUAGE=typescript
 # to choose which implementation the Docker stack runs.
 
@@ -73,9 +73,6 @@ cp config/proxy/extension_proxy.toml.example config/proxy/extension_proxy.toml
 # Edit config/proxy/extension_proxy.toml and fill in the DB credentials
 # for the Coston2 C-chain indexer (username and password in the [db] section).
 ```
-
-If you prefer to run your own local indexer, see `config/indexer/` and swap the
-`[db]` section in the proxy config (a commented example is in the file).
 
 ### Step 1: Deploy InstructionSender
 
@@ -235,8 +232,6 @@ If your tunnel restarts and the URL changes, update `TUNNEL_URL` in `.env`
 and restart the Docker stack (`docker compose down && docker compose up -d`),
 then re-run steps 5-6 (allow-tee-version + register-tee) to register a new
 TEE machine with the new URL.
-
----
 
 ## Cleanup
 

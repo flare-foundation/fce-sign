@@ -3,6 +3,7 @@
 
 # Go
 vendor/
+
 # Environment files (contain secrets)
 .env
 config/proxy/extension_proxy.toml

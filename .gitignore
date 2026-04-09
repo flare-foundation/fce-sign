@@ -7,6 +7,7 @@ vendor/
 # Environment files (contain secrets)
 .env
 config/proxy/extension_proxy.toml
+config/extension.env
 
 # Build output
 out/

@@ -1,62 +1,59 @@
-# Sign extension stack for Coston2.
+# Sign extension stack — Coston2/Coston/local devnet.
 #
-# Copy .env.example to .env and fill in the values before running.
-# Copy config/proxy/extension_proxy.toml.example to
-#   config/proxy/extension_proxy.toml and fill in DB credentials.
+# Build context is ../.. (parent of tee-node/ and extensions/) so the reproducible
+# Dockerfile can COPY both repos. The Docker build itself does NOT use LANGUAGE
+# switching; only Go is production-deployable. To build the python/typescript
+# reference implementations, run `docker build` against their own Dockerfiles
+# directly (python/Dockerfile, typescript/Dockerfile).
 #
 # Usage:
-#   docker compose up -d
+#   docker compose up -d                                                       # local devnet
+#   docker compose -f docker-compose.yaml -f docker-compose.coston.yaml up -d  # Coston
+#   docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml up -d # Coston2
 
 services:
   redis:
     image: redis:7-alpine
     command: redis-server --save "" --appendonly no
     ports:
-      - "${REDIS_BIND:-127.0.0.1:6383}:6379"
+      - "${REDIS_BIND:-127.0.0.1:6382}:6379"
     tmpfs:
       - /data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   ext-proxy:
-    build:
-      context: proxy/
-      dockerfile: Dockerfile
+    image: ${REGISTRY:-local}/tee-proxy
     volumes:
-      - ./config/proxy/extension_proxy.toml:/app/config/config.toml:ro
+      - ./config/proxy/extension_proxy.docker.toml:/app/config/config.toml:ro
     environment:
-      - PRIVATE_KEY=${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
+      - PROXY_PRIVATE_KEY=${PROXY_PRIVATE_KEY:-983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "${EXT_PROXY_INTERNAL_BIND:-0.0.0.0:6675}:6663"
-      - "${EXT_PROXY_EXTERNAL_BIND:-0.0.0.0:6676}:6664"
+      - "${EXT_PROXY_INTERNAL_BIND:-0.0.0.0:6673}:6663"
+      - "${EXT_PROXY_EXTERNAL_BIND:-0.0.0.0:6674}:6664"
     depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:6663/healthy"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
+      - redis
 
   extension-tee:
     build:
-      context: ${LANGUAGE:-go}/
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: extensions/sign/Dockerfile
+      args:
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH}
     env_file:
-      - .env
       - path: ./config/extension.env
         required: false
     environment:
-      - INITIAL_OWNER=${INITIAL_OWNER:?Set INITIAL_OWNER in .env}
-      - EXTENSION_ID=${EXTENSION_ID:?Set EXTENSION_ID in .env}
+      - MODE=${MODE:-1}
+      - INITIAL_OWNER=${INITIAL_OWNER:-0xF4E021377420Afe90c1A7D2b8968904946633a64}
       - PROXY_URL=http://ext-proxy:6663
-      - SIGN_PORT=8882
-      - EXTENSION_PORT=8883
+      - CONFIG_PORT=5501
+      - SIGN_PORT=7701
+      - EXTENSION_PORT=7702
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
-      ext-proxy:
-        condition: service_healthy
+      - ext-proxy
+
+networks:
+  default:
+    name: ${COMPOSE_NETWORK:-sign-default}

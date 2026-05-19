@@ -1,6 +1,8 @@
 package fccutils
 
 import (
+	"os"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/flare-foundation/tee-node/pkg/types"
 	"github.com/pkg/errors"
@@ -20,22 +22,23 @@ func GetTeeProxyID(proxyURL string) (common.Address, common.Address, error) {
 	return teeID, proxyID, nil
 }
 
-func GetCodeHashAndPlatform(teeInfo *types.SignedTeeInfoResponse, lf bool) (common.Hash, common.Hash, error) {
-	if lf {
-		// In local/test mode, trust the proxy's reported values.
-		return teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, nil
-	}
-
-	codeHash, platform, err := CodeHashAndPlatform(string(teeInfo.TeeInfoResponse.Attestation))
-	if err != nil {
-		return common.Hash{}, common.Hash{}, err
+func GetCodeHashAndPlatform(teeInfo *types.SignedTeeInfoResponse) (common.Hash, common.Hash, error) {
+	simulatedTee := os.Getenv("SIMULATED_TEE") == "true"
+	codeHash := TeeCodeHash
+	platform := TestPlatform
+	var err error
+	if !simulatedTee {
+		codeHash, platform, err = CodeHashAndPlatform(string(teeInfo.TeeInfoResponse.Attestation))
+		if err != nil {
+			return common.Hash{}, common.Hash{}, err
+		}
 	}
 
 	if codeHash != teeInfo.MachineData.CodeHash {
 		return common.Hash{}, common.Hash{}, errors.Errorf("code hashes do not match: %s, %s", codeHash, teeInfo.MachineData.CodeHash)
 	}
 	if platform != teeInfo.MachineData.Platform {
-		return common.Hash{}, common.Hash{}, errors.Errorf("platforms do not match: %s, %s", platform, teeInfo.MachineData.Platform)
+		return common.Hash{}, common.Hash{}, errors.Errorf("platforms do not matc: %s, %s", platform, teeInfo.MachineData.Platform)
 	}
 
 	return codeHash, platform, nil

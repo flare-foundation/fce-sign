@@ -7,8 +7,6 @@ import (
 	"math/big"
 	"strings"
 
-	"sign-tools/base"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,12 +14,17 @@ import (
 )
 
 // DecodeRevertReason attempts to extract and decode the revert reason from
-// an error returned by eth_call or eth_estimateGas.
+// an error returned by eth_call or eth_estimateGas. Returns the decoded
+// reason string, or empty string if no revert data could be extracted.
 func DecodeRevertReason(err error) string {
 	if err == nil {
 		return ""
 	}
 
+	// go-ethereum wraps JSON-RPC errors with a type that exposes the
+	// error's "data" field via ErrorData(). The data field contains the
+	// ABI-encoded revert reason even when the error message is just
+	// "execution reverted".
 	type dataError interface {
 		ErrorData() interface{}
 	}
@@ -39,7 +42,9 @@ func DecodeRevertReason(err error) string {
 }
 
 // SimulateAndDecodeRevert replays a call via eth_call and attempts to decode
-// the revert reason.
+// the revert reason. Use this as a fallback when DecodeRevertReason on the
+// original error returns empty — some RPC nodes strip revert data from
+// eth_estimateGas errors but include it in eth_call responses.
 func SimulateAndDecodeRevert(
 	client *ethclient.Client,
 	from common.Address,
@@ -60,9 +65,12 @@ func SimulateAndDecodeRevert(
 		if reason := DecodeRevertReason(err); reason != "" {
 			return reason
 		}
+		// Return the raw error message as a last resort
 		return err.Error()
 	}
 
+	// Some nodes return the ABI-encoded revert data in the result
+	// bytes instead of as an error
 	if len(result) >= 4 {
 		return decodeRevertHex(hex.EncodeToString(result))
 	}
@@ -77,16 +85,11 @@ func decodeRevertHex(hexStr string) string {
 		return ""
 	}
 
-	// Standard Error(string) revert.
+	// Try to decode as Error(string) — selector 0x08c379a2
 	if reason, unpackErr := abi.UnpackRevert(decoded); unpackErr == nil {
 		return reason
 	}
 
-	// Try matching a known custom error selector.
-	withPrefix := "0x" + hexStr
-	if name := base.DecodeCustomError(withPrefix); name != "" {
-		return withPrefix
-	}
-
+	// Return raw hex for custom errors we can't decode
 	return "0x" + hexStr
 }

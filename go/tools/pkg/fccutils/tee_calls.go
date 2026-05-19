@@ -7,23 +7,25 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/flare-foundation/go-flare-common/pkg/logger"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/flare-foundation/go-flare-common/pkg/tee/attestation/googlecloud"
 	"github.com/flare-foundation/tee-node/pkg/attestation"
 	"github.com/flare-foundation/tee-node/pkg/types"
 	"github.com/pkg/errors"
 )
 
-const repeats = 60
+const repeats = 15
 
 func TeeInfo(nodeURL string) (*types.SignedTeeInfoResponse, error) {
 	result, err := http.Get(nodeURL + "/info")
 	if err != nil {
 		return nil, errors.Errorf("%s", err)
 	}
+	defer result.Body.Close()
 
 	var teeInfo types.SignedTeeInfoResponse
 	err = json.NewDecoder(result.Body).Decode(&teeInfo)
@@ -77,13 +79,10 @@ func TeeProxyId(teeInfo *types.SignedTeeInfoResponse) (common.Address, common.Ad
 func ActionResult(nodeURL string, actionID common.Hash) (*types.ActionResponse, error) {
 	var result *http.Response
 	var err error
-	for i := range repeats {
+	for range repeats {
 		result, err = http.Get(nodeURL + "/action/result/" + actionID.Hex())
 		if err == nil && result.StatusCode == http.StatusOK {
 			break
-		}
-		if i%5 == 0 {
-			logger.Infof("waiting for action result (%d/%d)...", i+1, repeats)
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -94,6 +93,7 @@ func ActionResult(nodeURL string, actionID common.Hash) (*types.ActionResponse, 
 		logger.Warnf("action result status not ok: got: %d for %s, %s", result.StatusCode, actionID.Hex(), nodeURL)
 		return nil, errors.Errorf("action result status not ok, got: %d", result.StatusCode)
 	}
+	defer result.Body.Close()
 
 	var response types.ActionResponse
 	err = json.NewDecoder(result.Body).Decode(&response)

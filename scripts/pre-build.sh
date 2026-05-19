@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # pre-build.sh — Deploy InstructionSender contract and register extension on-chain.
 #
-# Inputs (env vars, typically set in .env):
+# Inputs (env vars):
 #   ADDRESSES_FILE  — path to deployed-addresses.json (auto-detected if unset)
-#   CHAIN_URL       — chain RPC URL (default: https://coston2-api.flare.network/ext/C/rpc)
-#   PRIVATE_KEY     — funded private key (hex, no 0x prefix)
-#   LOCAL_MODE      — true for local devnet, false for Coston2 (default: false)
+#   CHAIN_URL       — chain RPC URL (default: http://127.0.0.1:8545)
+#   DEPLOYMENT_PRIVATE_KEY — funded private key (default: Hardhat account)
 #
 # Outputs:
 #   config/extension.env — EXTENSION_ID and INSTRUCTION_SENDER
+#   config/deploy.log    — stderr from Go deploy commands
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -27,24 +27,29 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
 fi
 
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
-# Resolve relative paths against PROJECT_DIR (not caller's cwd)
 if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
     ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
 fi
-CHAIN_URL="${CHAIN_URL:-https://coston2-api.flare.network/ext/C/rpc}"
+CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 CONFIG_OUTPUT="$PROJECT_DIR/config/extension.env"
+LOG_FILE="$PROJECT_DIR/config/deploy.log"
 
 # Auto-detect addresses file
 if [[ -z "$ADDRESSES_FILE" ]]; then
-    LOCAL_MODE="${LOCAL_MODE:-false}"
-    if [[ "$LOCAL_MODE" != "true" ]]; then
-        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
-        if [[ -f "$candidate" ]]; then
-            ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
-        fi
+    LOCAL_MODE="${LOCAL_MODE:-true}"
+    CHAIN="${CHAIN:-}"
+    if [[ -z "$CHAIN" ]]; then
+        [[ "$LOCAL_MODE" == "true" ]] && CHAIN="local" || CHAIN="coston2"
+    fi
+    case "$CHAIN" in
+        coston)  candidate="$PROJECT_DIR/config/coston/deployed-addresses.json" ;;
+        coston2) candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json" ;;
+        *)       candidate="" ;;
+    esac
+    if [[ -n "$candidate" && -f "$candidate" ]]; then
+        ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
     fi
 
-    # Fall back to sim_dump candidates (local devnet)
     if [[ -z "$ADDRESSES_FILE" ]]; then
         for candidate in \
             "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
@@ -62,12 +67,17 @@ if [[ -z "$ADDRESSES_FILE" ]]; then
 fi
 
 [[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
-
-# Resolve to absolute path so it works after cd into go/tools/
 ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESSES_FILE")"
 
 log "Chain URL:      $CHAIN_URL"
 log "Addresses file: $ADDRESSES_FILE"
+
+# --- Step 0: Pre-flight check ---
+step 0 "Pre-flight check"
+cd "$PROJECT_DIR/go/tools"
+if ! go run ./cmd/deploy-contract -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --preflight-only 2>&1; then
+    die "Pre-flight check failed — fix the issues above before deploying"
+fi
 
 # --- Step 1: Generate Go bindings from Solidity contract ---
 step 1 "Generate Go bindings"
@@ -76,12 +86,36 @@ step 1 "Generate Go bindings"
 # --- Step 2: Deploy InstructionSender ---
 step 2 "Deploy InstructionSender contract"
 cd "$PROJECT_DIR/go/tools"
-INSTRUCTION_SENDER=$(go run ./cmd/deploy-contract -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --verify=false 2>/dev/null | tail -1) || die "Deploy failed"
+mkdir -p "$(dirname "$LOG_FILE")"
+: > "$LOG_FILE"
+INSTRUCTION_SENDER=$(go run ./cmd/deploy-contract -a "$ADDRESSES_FILE" -c "$CHAIN_URL" 2>"$LOG_FILE" | tail -1) || {
+    echo -e "${RED}Deploy failed. Logs:${NC}" >&2
+    cat "$LOG_FILE" >&2
+    die "Deploy failed — see output above"
+}
+
+[[ "$INSTRUCTION_SENDER" =~ ^0x[0-9a-fA-F]{40}$ ]] || {
+    echo -e "${RED}deploy-contract output was not a valid address. Logs:${NC}" >&2
+    cat "$LOG_FILE" >&2
+    die "deploy-contract returned invalid address: '$INSTRUCTION_SENDER' (expected 0x + 40 hex chars)"
+}
+
 log "InstructionSender deployed at: $INSTRUCTION_SENDER"
 
 # --- Step 3: Register extension ---
 step 3 "Register extension on-chain"
-EXTENSION_ID=$(go run ./cmd/register-extension -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --instructionSender "$INSTRUCTION_SENDER" 2>/dev/null | tail -1) || die "Registration failed"
+EXTENSION_ID=$(go run ./cmd/register-extension -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --instructionSender "$INSTRUCTION_SENDER" 2>>"$LOG_FILE" | tail -1) || {
+    echo -e "${RED}Registration failed. Logs:${NC}" >&2
+    cat "$LOG_FILE" >&2
+    die "Registration failed — see output above"
+}
+
+[[ "$EXTENSION_ID" =~ ^0x[0-9a-fA-F]{64}$ ]] || {
+    echo -e "${RED}register-extension output was not a valid ID. Logs:${NC}" >&2
+    cat "$LOG_FILE" >&2
+    die "register-extension returned invalid ID: '$EXTENSION_ID' (expected 0x + 64 hex chars)"
+}
+
 log "Extension ID: $EXTENSION_ID"
 
 # --- Step 4: Write config ---
@@ -100,3 +134,4 @@ echo -e "${GREEN}========================================${NC}"
 echo "  EXTENSION_ID         $EXTENSION_ID"
 echo "  INSTRUCTION_SENDER   $INSTRUCTION_SENDER"
 echo "  Config file          $CONFIG_OUTPUT"
+echo "  Deploy log           $LOG_FILE"

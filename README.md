@@ -1,313 +1,132 @@
-# TEE Extension Example - Private Key Manager
+# TEE Extension Example — Private Key Manager (sign)
 
 An example TEE extension that stores a private key and signs messages with it.
-Use this as a **hackathon starter template**: clone it, modify the code to create
-your own extension, then deploy/register/test it on Coston2.
 
 > **Warning**: This repo is for demonstration purposes only. Storing encrypted
 > secrets on-chain is not advisable in production — on-chain data is public
 > and encryption can be broken over time. A production extension should use
 > off-chain channels for secret delivery.
 
-## For Hackathon Participants
+## Layout & deployable surface
 
-Pick the language you're most comfortable with and work inside its directory.
-You should modify the files in `app/` and the shared
-`contract/InstructionSender.sol`. The files in `base/` are framework
-infrastructure -- you should not need to modify them.
+This repo contains three implementations of the same extension:
 
-| Language   | Directory                    | Test command                                                        |
-| ---------- | ---------------------------- | ------------------------------------------------------------------- |
-| Go         | [`go/`](go/)                 | `cd go && go test ./...`                                            |
-| Python     | [`python/`](python/)         | `cd python && python3 -m unittest discover -s tests -p 'test_*.py'` |
-| TypeScript | [`typescript/`](typescript/) | `cd typescript && npm ci && npm test`                               |
+| Language   | Directory                    | Deployable on Coston/Coston2? |
+| ---------- | ---------------------------- | ----------------------------- |
+| Go         | [`go/`](go/)                 | **Yes** — production target   |
+| Python     | [`python/`](python/)         | No — reference implementation |
+| TypeScript | [`typescript/`](typescript/) | No — reference implementation |
 
-See each directory's `README.md` for details on the handler signature, what's
-provided by `base/`, and what files to change.
+The **Go** implementation is the one wired into `Dockerfile`, `docker-compose.yaml`,
+and `scripts/*` for the testnet deploy flow described in
+[`testnet-deployment.md`](testnet-deployment.md).
 
-### Agent skills (optional)
+Python and TypeScript implementations are kept as side-by-side references for
+hackathon participants who want to study the protocol in a different language.
+They have their own `Dockerfile` and tests but do **not** deploy via the
+scaffold-aligned flow — they're code-reading material, not deploy artifacts.
 
-Install the skill for agentic coding:
+### Running the hackathon-style language tests
 
-```bash
-npx skills add .
-```
+| Language   | Test command                                                        |
+| ---------- | ------------------------------------------------------------------- |
+| Go         | `cd go && go test ./...`                                            |
+| Python     | `cd python && python3 -m unittest discover -s tests -p 'test_*.py'` |
+| TypeScript | `cd typescript && npm ci && npm test`                               |
 
 ## Shared contract
 
-`contract/InstructionSender.sol` is shared across all implementations. Update it
-to match your extension's OPType/OPCommand constants.
+`contracts/InstructionSender.sol` is shared across all implementations. It
+declares `OP_TYPE_KEY = bytes32("KEY")`, `OP_COMMAND_UPDATE = bytes32("UPDATE")`
+and `OP_COMMAND_SIGN = bytes32("SIGN")` and exposes `updateKey(bytes)` and
+`sign(bytes)` entry points that route through the Flare TEE Manager diamond.
 
-## Deploying and Testing on Coston2
+## Deploying and Testing
 
-Run the sign extension locally, expose it to the internet via a tunnel
-(cloudflared, ngrok, etc.), and register + test it on the Coston2 testnet
-(chain ID 114).
+The full testnet flow (Coston/Coston2 with a devops-hosted Confidential Space
+VM) is documented in [`testnet-deployment.md`](testnet-deployment.md). The
+short version:
 
-All deployment, registration, and testing tools are in `go/tools/` and work
-for **all extension languages**. The scripts interact with smart contracts and
-the TEE proxy — they don't depend on the extension's implementation language.
-Set `LANGUAGE` in `.env` to choose which Docker image to build.
+```bash
+bash ./scripts/use-chain.sh coston2       # or coston
+bash ./scripts/full-setup.sh --chain coston2 --test
+```
 
-See [`go/README.md`](go/README.md#tools-gotools) for tool details.
+For local development against a Hardhat devnet + locally-built Docker stack:
+
+```bash
+bash ./scripts/use-chain.sh local
+bash ./scripts/full-setup.sh --test       # defaults to --chain local
+```
+
+Each phase can also be run individually:
+
+```bash
+./scripts/pre-build.sh         # 1. Deploy contract + register extension → config/extension.env
+./scripts/start-services.sh    # 2. Docker compose up (redis + ext-proxy + extension-tee)
+./scripts/post-build.sh        # 3. Allow TEE version + register TEE machine on-chain
+./scripts/test.sh              # 4. End-to-end UPDATE/SIGN test against the running TEE
+./scripts/stop-services.sh     # Tear down
+```
 
 ### Prerequisites
 
-- Docker
-- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
-  to expose a local port to the internet (no account required; [ngrok](https://ngrok.com/) also works but needs sign-up)
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`)
-  for contract compilation and verification
-- A funded Coston2 wallet (needs C2FLR for gas + TEE registration fees)
-- Go >= 1.23 (for the deployment/registration tools in `go/tools/`)
+- **Docker Desktop** (Linux containers) — for the local stack
+- **Go 1.25.1+** — for the deploy + registration tools in `go/tools/`
+- **Foundry** (`forge`, `cast`, `jq`) — for Solidity compilation and contract bindings
+- **Bash** — Git Bash works on Windows
+- **Sibling repos** at `../../tee-node/` and `../../tee-proxy/` (cloned next to
+  `extensions/` under a shared `tee/` parent — see
+  [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for layout)
+- **A funded private key** for the target chain. Set as `DEPLOYMENT_PRIVATE_KEY`
+  in `.env.<chain>` (no `0x` prefix). Fund at
+  [`faucet.flare.network`](https://faucet.flare.network/).
+- For Coston/Coston2 deploys: a devops contact who'll run the TEE on a real
+  GCP Confidential Space VM. See `testnet-deployment.md` for the full handoff.
 
-### Quick start (scripted)
+### Chain selection
 
-Once your environment is configured (steps 0 below), you can run the entire
-deploy → start → register → test flow with a single command:
+`.env` is a per-chain file. `scripts/use-chain.sh <chain>` copies the active
+chain's template (`.env.coston`, `.env.coston2`, or `.env.example` for local)
+over `.env`. All scripts then source `.env` automatically.
 
-```bash
-./scripts/full-setup.sh --test
-```
+| Chain     | `.env.<chain>`  | Addresses file                          | RPC                                              |
+| --------- | --------------- | --------------------------------------- | ------------------------------------------------ |
+| local     | `.env.example`  | `e2e/docker/sim_dump/deployed-addresses.json` (auto-detected) | `http://127.0.0.1:8545`                          |
+| coston    | `.env.coston`   | `config/coston/deployed-addresses.json` | `https://coston-api.flare.network/ext/C/rpc`     |
+| coston2   | `.env.coston2`  | `config/coston2/deployed-addresses.json`| `https://coston2-api.flare.network/ext/C/rpc`    |
 
-Or run each phase individually:
+### Generated artifacts
 
-```bash
-# 1. Deploy contract + register extension → writes config/extension.env
-./scripts/pre-build.sh
+`pre-build.sh` writes the new `EXTENSION_ID` and `INSTRUCTION_SENDER` to
+`config/extension.env`. Every subsequent script (`start-services`, `post-build`,
+`test`) reads this file automatically — no manual `.env` edits required.
 
-# 2. Build and start Docker stack, wait for health
-./scripts/start-services.sh
+## Reproducible builds
 
-# 3. Register TEE version + TEE machine on-chain
-./scripts/post-build.sh
-
-# 4. Run the end-to-end test
-./scripts/test.sh
-
-# Stop everything
-./scripts/stop-services.sh
-```
-
-The scripts read configuration from `.env` and auto-detect the addresses file.
-`pre-build.sh` writes the generated `EXTENSION_ID` and `INSTRUCTION_SENDER` to
-`config/extension.env`, which all later scripts pick up automatically — no need
-to copy values into `.env` by hand.
-
-> **Note**: You still need to configure `.env` and
-> `config/proxy/extension_proxy.toml` before running the scripts (step 0 below),
-> and you still need a running tunnel with `TUNNEL_URL` set in `.env` before
-> post-build can register the TEE machine (step 4 in the manual flow).
-
----
-
-### Manual steps
-
-The sections below walk through each step individually, which is useful for
-understanding the flow or debugging issues. The scripts above automate this
-same sequence.
-
-### Step 0: Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env and fill in PRIVATE_KEY and INITIAL_OWNER.
-# Set LANGUAGE=go, LANGUAGE=python, or LANGUAGE=typescript
-# to choose which implementation the Docker stack runs.
-
-cp config/proxy/extension_proxy.toml.example config/proxy/extension_proxy.toml
-# Edit config/proxy/extension_proxy.toml and fill in the DB credentials
-# for the Coston2 C-chain indexer (username and password in the [db] section).
-```
-
-### Step 1: Deploy InstructionSender
-
-```bash
-cd go/tools
-go run ./cmd/deploy-contract
-```
-
-The deploy tool automatically verifies the contract source on the
-[Coston2 block explorer](https://coston2-explorer.flare.network/).
-Pass `--no-verify` to skip.
-
-Save the printed address in `.env`:
-
-```bash
-# Add to .env
-INSTRUCTION_SENDER="<deployed-address>"
-```
-
-### Step 2: Register the extension
-
-```bash
-cd go/tools
-go run ./cmd/register-extension
-```
-
-Save the printed extension ID in `.env`:
-
-```bash
-# Add to .env
-EXTENSION_ID="0x<64-hex-chars>"
-```
-
-### Step 3: Start the extension stack
-
-Build and start the stack (rebuild when switching `LANGUAGE` in `.env`):
-
-```bash
-docker compose build
-docker compose up -d
-```
-
-Wait for the proxy to become healthy:
-
-```bash
-until curl -sf http://localhost:6676/info >/dev/null 2>&1; do sleep 2; done
-echo "Extension proxy is ready"
-```
-
-### Step 4: Start tunnel
-
-In a separate terminal, expose the extension proxy port (6676) to the internet:
-
-```bash
-# Using cloudflared (no account required):
-cloudflared tunnel --url http://localhost:6676
-
-# Or using ngrok:
-ngrok http 6676
-```
-
-Note the public HTTPS URL and add it to `.env`:
-
-```bash
-# Add to .env
-TUNNEL_URL="https://<your-tunnel-url>"
-```
-
-> **Note**: The tunnel must stay running for the entire session. If your
-> computer sleeps or restarts, restart the tunnel and update `TUNNEL_URL`
-> in `.env` with the new URL.
-
-### Step 5: Add TEE version
-
-```bash
-cd go/tools
-go run ./cmd/allow-tee-version -p http://localhost:6676
-```
-
-### Step 6: Register the TEE machine
-
-Make sure `TUNNEL_URL` is set correctly in `.env`.
-
-```bash
-cd go/tools
-go run ./cmd/register-tee -p http://localhost:6676 -l
-```
-
-The `-l` flag enables local/test mode (required when the TEE returns a test
-attestation token instead of a real GCP JWT).
-
-The `-p` flag specifies an existing production TEE on extension 0 that
-performs the FTDC availability check on your TEE. It defaults to
-`https://tee-proxy-coston2-1.flare.rocks` (the Coston2 public TEE proxy).
-
-### Step 7: Run the end-to-end test
-
-Make sure `INSTRUCTION_SENDER` and `TUNNEL_URL` are set correctly in `.env`.
-
-```bash
-cd go/tools
-go run ./cmd/run-test -p http://localhost:6676
-```
-
-The test will:
-
-1. Call `setExtensionId()` on the InstructionSender
-2. Fetch the TEE's public key from the proxy
-3. ECIES-encrypt a test private key and send `updateKey` on-chain
-4. Wait for the TEE to process the instruction
-5. Send a `sign` instruction on-chain
-6. Verify the returned signature matches the test private key
-
----
-
-## Port reference
-
-| Service            | Container port | Host port |
-| ------------------ | -------------- | --------- |
-| ext-proxy internal | 6663           | 6675      |
-| ext-proxy external | 6664           | 6676      |
-| redis              | 6379           | 6383      |
-
-The tunnel exposes host port 6676 (ext-proxy external) to the internet.
+The Dockerfile is reproducible: same source + same `SOURCE_DATE_EPOCH` yields a
+bit-for-bit identical image. See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md).
 
 ## Troubleshooting
 
-### Proxy won't start / DB sync error
+See `testnet-deployment.md` § Troubleshooting for the full catalogue. Common
+issues:
 
-The proxy needs a synced C-chain indexer DB. Check the proxy logs and verify
-the DB credentials in `config/proxy/extension_proxy.toml`:
+- **`connect: connection refused` from ext-proxy** — VPN to Flare's indexer DB
+  (`35.241.249.150:3306`) is down on Coston/Coston2 deploys.
+- **`Verification.TeeNotFound`** — `NORMAL_PROXY_URL` is pointed at the wrong
+  chain's FTDC proxy.
+- **`Verification.ChallengeExpired`** — re-run `post-build.sh`; the patched
+  `register-tee` already passes `-command rRap` for fresh attestation.
+- **`code hashes do not match`** — `SIMULATED_TEE` and the TEE's `MODE` env
+  disagree. Both must point at "real" for testnet (`SIMULATED_TEE=false`,
+  `MODE=0`).
 
-```bash
-docker compose logs ext-proxy
-```
+## Related docs
 
-### Transaction reverts
-
-Ensure your wallet has enough C2FLR for gas + fees. The TEE fee calculator
-determines the required fee for each operation.
-
-### to-production times out
-
-Try restarting the proxy — it may have missed a signing policy round:
-
-```bash
-docker compose down
-docker compose up -d
-```
-
-If that doesn't help, the FDC attestation flow requires active relay providers
-on Coston2. If no relay infrastructure is running, the availability check won't
-complete.
-
-### Tunnel URL changed
-
-If your tunnel restarts and the URL changes, update `TUNNEL_URL` in `.env`
-and restart the Docker stack (`docker compose down && docker compose up -d`),
-then re-run steps 5-6 (allow-tee-version + register-tee) to register a new
-TEE machine with the new URL.
-
-## Cleanup
-
-To shut down all local services and prepare for a fresh start:
-
-### Stop the Docker stack
-
-```bash
-./scripts/stop-services.sh
-# or: docker compose down
-```
-
-This stops and removes all containers (redis, ext-proxy, extension-tee).
-
-### Full reset (start from scratch)
-
-If you want to completely reset and follow the README from the beginning:
-
-```bash
-# Remove built images (forces rebuild)
-docker compose down --rmi local
-
-# Clear environment state
-rm -f .env config/proxy/extension_proxy.toml config/extension.env
-```
-
-After a full reset, start again from [Step 0](#step-0-configure-environment).
-
-> **Note**: On-chain state (deployed contracts, registered extensions, registered
-> TEEs) cannot be reset. Each fresh start will deploy a new InstructionSender
-> contract and register a new extension. This is fine for testing — Coston2 is
-> a testnet.
+| Doc                                            | What it covers                                                   |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| [`testnet-deployment.md`](testnet-deployment.md) | End-to-end Coston/Coston2 deploy with devops handoff             |
+| [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md)       | `SOURCE_DATE_EPOCH` and reproducible image builds                |
+| [`go/`](go/)                                    | Go extension binary + tooling (production-deployable)            |
+| [`python/`](python/) / [`typescript/`](typescript/) | Reference implementations of the same protocol (no deploy) |

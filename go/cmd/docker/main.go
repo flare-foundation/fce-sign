@@ -1,8 +1,6 @@
 // Package main provides a combined entry point for Docker that starts both the
-// tee-node server and the sign extension in a single process. Unlike the
-// two-binary approach, this uses teeServer.StartServerExtension() which does
-// NOT override TestCodeHash, ensuring the TEE reports the correct code hash
-// (194844...) that the Coston2 production verifier expects.
+// tee-node server and the sign extension in a single process. Docker sets
+// PROXY_URL as an env var which tee-node reads directly via settings.init().
 package main
 
 import (
@@ -10,38 +8,48 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	teeServer "github.com/flare-foundation/tee-node/pkg/server"
 
-	"sign-extension/internal/app"
-	"sign-extension/internal/base"
+	"sign-extension/internal/config"
+	extserver "sign-extension/pkg/server"
 )
 
 func main() {
-	configPort := intEnv("CONFIG_PORT", 5502)
-	signPort := intEnv("SIGN_PORT", 8882)
-	extensionPort := intEnv("EXTENSION_PORT", 8883)
+	configPort := intEnv("CONFIG_PORT", config.ConfigPort)
 
-	// Start tee-node in extension mode (config server, sign server, forward router).
+	// config.SignPort and config.ExtensionPort are set from SIGN_PORT and
+	// EXTENSION_PORT env vars via config.init().
+	signPort := config.SignPort
+	extensionPort := config.ExtensionPort
+
+	// Start tee-node in extension mode.
 	go teeServer.StartServerExtension(configPort, signPort, extensionPort)
 
-	// Start the sign extension server on the extension port.
-	app.SetSignPort(strconv.Itoa(signPort))
-	srv := base.New(strconv.Itoa(extensionPort), strconv.Itoa(signPort), app.Version, app.Register, app.ReportState)
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			logger.Errorf("extension server error: %v", err)
-		}
-	}()
+	// Start extension server — fail fast if port binding fails.
+	extErrCh := extserver.StartExtension(extensionPort, signPort)
+
+	// Give server a moment to bind, then check for early failures.
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-extErrCh:
+		logger.Fatalf("extension server failed to start: %v", err)
+	default:
+	}
 
 	logger.Infof("sign extension TEE running (config=%d, sign=%d, ext=%d)", configPort, signPort, extensionPort)
 
-	// Wait for signal.
+	// Wait for signal or server error.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
-	logger.Info("shutting down")
+	select {
+	case <-sigChan:
+		logger.Info("shutting down")
+	case err := <-extErrCh:
+		logger.Fatalf("extension server error: %v", err)
+	}
 }
 
 func intEnv(key string, fallback int) int {

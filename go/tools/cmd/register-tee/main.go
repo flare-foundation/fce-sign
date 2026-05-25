@@ -2,49 +2,41 @@ package main
 
 import (
 	"encoding/hex"
+	"sign-extension/tools/pkg/configs"
+	"sign-extension/tools/pkg/fccutils"
+	"sign-extension/tools/pkg/support"
 	"flag"
 	"os"
 
-	"sign-tools/base"
-	"sign-tools/base/fccutils"
-
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load .env for TUNNEL_URL
-	_ = godotenv.Load()
-	_ = godotenv.Load("../../.env")
-
-	defaultHostURL := os.Getenv("TUNNEL_URL")
-
-	af := flag.String("a", base.DefaultAddressesFile, "file with deployed addresses")
-	cf := flag.String("c", base.DefaultChainNodeURL, "chain node url")
-	pf := flag.String("p", base.DefaultExtensionProxyURL, "extension proxy url (local)")
-	hostF := flag.String("host", defaultHostURL, "on-chain host URL reachable by external TEEs (e.g. tunnel URL)")
-	defaultExternalProxy := os.Getenv("NORMAL_PROXY_URL")
-	if defaultExternalProxy == "" {
-		defaultExternalProxy = "https://tee-proxy-coston2-1.flare.rocks"
-	}
-	epf := flag.String("ep", defaultExternalProxy, "external proxy url for FTDC availability check (must be a production TEE on extension 0)")
-	lf := flag.Bool("l", false, "local")
+	af := flag.String("a", configs.AddressesFile, "file with deployed addresses")
+	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
+	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url (used to query TEE info)")
+	hf := flag.String("h", "", "host url to register on-chain (defaults to -p if not set)")
+	epf := flag.String("ep", "http://localhost:6662", "external proxy url (for FTDC)")
 	instructionF := flag.String("i", "", "instructionID")
 	command := flag.String("command", "rap", "command (rap)")
+	stateFile := flag.String("state", "../config/register-tee.state", "state file for resume support")
+	resume := flag.Bool("resume", false, "resume from state file (default: start fresh)")
 
 	flag.Parse()
 
-	hostURL := *hostF
-	if hostURL == "" {
-		hostURL = *pf
+	// Default: start fresh. Only resume if --resume is explicitly passed.
+	if !*resume {
+		if err := os.Remove(*stateFile); err != nil && !os.IsNotExist(err) {
+			logger.Warnf("WARNING: failed to remove stale state file: %v", err)
+		}
 	}
 
-	testSupport, err := base.DefaultSupport(*af, *cf)
+	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
 
-	// Get teeID from proxy.
+	// get teeID from proxy
 	teeInfo, err := fccutils.TeeInfo(*pf)
 	if err != nil {
 		fccutils.FatalWithCause(err)
@@ -60,14 +52,19 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 
-	// Verify code hash / platform.
-	_, _, err = fccutils.GetCodeHashAndPlatform(teeInfo, *lf)
+	// to check if things are ok
+	_, _, err = fccutils.GetCodeHashAndPlatform(teeInfo)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
 
+	hostURL := *hf
+	if hostURL == "" {
+		hostURL = *pf
+	}
+
 	logger.Infof("Registration of TEE with ID %s", hex.EncodeToString(teeID[:]))
-	err = fccutils.RegisterNode(testSupport, teeInfo, hostURL, *epf, ftdcTeeID, *command, *instructionF)
+	err = fccutils.RegisterNode(testSupport, teeInfo, hostURL, *epf, ftdcTeeID, *command, *instructionF, *stateFile)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}

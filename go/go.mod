@@ -4,8 +4,9 @@ go 1.25.1
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
-	github.com/flare-foundation/go-flare-common v1.2.1-0.20260312105002-c0e3c9ae661f
-	github.com/flare-foundation/tee-node v0.0.15
+	github.com/ethereum/go-ethereum v1.16.7
+	github.com/flare-foundation/go-flare-common v1.2.1-0.20260424152410-876c09e65794
+	github.com/flare-foundation/tee-node v0.0.0
 	golang.org/x/crypto v0.43.0
 )
 
@@ -21,7 +22,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
-	github.com/ethereum/go-ethereum v1.16.7 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -51,3 +51,7 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/gorm v1.31.0 // indirect
 )
+
+// Sign extension is at tee/extensions/sign/go/, tee-node is at tee/tee-node/,
+// so the relative path is three levels up.
+replace github.com/flare-foundation/tee-node => ../../../tee-node

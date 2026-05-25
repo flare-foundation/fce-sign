@@ -9,7 +9,7 @@ Linear recipe to deploy a TEE extension to Flare Coston or Coston2. Run the step
 - 🔨 Foundry (`forge`, `cast`)
 - `jq`
 - Bash (Git Bash on Windows works)
-- VPN access to Flare's indexer DB (`35.241.249.150:3306`)
+- VPN access to Flare's indexer DB (`35.241.249.150:3306`) — **only required if you run your own `ext-proxy` locally**. If you're using a devops-hosted proxy (the normal Coston/Coston2 path), devops's proxy queries the indexer for you and you never touch it.
 
 ## 1. Clone sibling repos
 
@@ -63,6 +63,15 @@ bash ./scripts/use-chain.sh <chain>
 Copies `.env.<chain>` → `.env`, which all scripts auto-load.
 
 ## 4. Register the extension on-chain
+
+> [!IMPORTANT]
+> **First-time clone only — generate Go contract bindings before running `pre-build.sh`:**
+>
+> ```bash
+> bash ./scripts/generate-bindings.sh
+> ```
+>
+> `go/tools/pkg/contracts/sign/autogen.go` is `.gitignore`d and produced by this script. On a fresh checkout it doesn't exist, and `pre-build.sh` step 0 (pre-flight compile) fails with `undefined: sign.InstructionSender`, `undefined: sign.NewInstructionSender`, etc. `pre-build.sh` _does_ run `generate-bindings.sh` as its step 1, but step 0 comes first and needs the file already in place. Run the bindings script once after cloning and you won't hit this again.
 
 ```bash
 bash ./scripts/pre-build.sh
@@ -129,12 +138,12 @@ curl -s $env:EXT_PROXY_URL/info | jq '.machineData'
 
 Required values:
 
-| Field          | Expected                                                          |
-| -------------- | ----------------------------------------------------------------- |
-| `platform`     | starts with `0x4743505f414d445f534556…` (GCP_AMD_SEV)             |
-| `codeHash`     | real measured hash (**not** `0x194844cf…` — that's simulated)     |
-| `extensionId`  | matches your `config/extension.env` `EXTENSION_ID`                |
-| `initialOwner` | matches your `INITIAL_OWNER`                                      |
+| Field          | Expected                                                      |
+| -------------- | ------------------------------------------------------------- |
+| `platform`     | starts with `0x4743505f414d445f534556…` (GCP_AMD_SEV)         |
+| `codeHash`     | real measured hash (**not** `0x194844cf…` — that's simulated) |
+| `extensionId`  | matches your `config/extension.env` `EXTENSION_ID`            |
+| `initialOwner` | matches your `INITIAL_OWNER`                                  |
 
 If `extensionId` is wrong, ask the VM operator to restart the container with the correct `EXTENSION_ID` env override (no image rebuild needed — it's a launch-policy override).
 

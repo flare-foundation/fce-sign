@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"math/big"
 	"os"
-	"strings"
 	"sign-extension/tools/pkg/support"
+	"strings"
+
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +21,6 @@ import (
 	"github.com/flare-foundation/tee-node/pkg/fdc"
 	"github.com/flare-foundation/tee-node/pkg/types"
 	"github.com/pkg/errors"
-	"time"
 )
 
 // registrationState tracks progress through the multi-step registration flow.
@@ -324,7 +325,33 @@ func GetFTDCAvailabilityCheckResult(hostURL string, instructionId common.Hash) (
 	return &toProductionProof, nil
 }
 
+// teeStatusProduction is the IMachineManager.TeeStatus enum value for
+// "Production" — the state the TEE enters after a successful toProduction call.
+// If the on-chain enum is ever reordered, this constant must be updated to match.
+const teeStatusProduction uint8 = 1
+
 func ToProduction(s *support.Support, toProductionProof *machinemanager.ITeeAvailabilityCheckProof) error {
+	teeID := toProductionProof.RequestBody.TeeId
+
+	// Idempotency guard — mirrors the "already registered, skip pre-registration"
+	// check in RegisterNode. If the TEE is already in Production, the contract
+	// would revert with an InvalidTeeStatus-class custom error; return nil so
+	// post-build.sh is safe to re-run.
+	//
+	// Always log the on-chain status before deciding, so a wrong constant or an
+	// unexpected state (Paused, Banned, ...) is immediately visible in logs.
+	callOpts := &bind.CallOpts{Context: context.Background()}
+	status, statusErr := s.TeeMachineRegistry.GetTeeMachineStatus(callOpts, teeID)
+	if statusErr != nil {
+		logger.Warnf("could not read TEE machine status (%v) — proceeding with ToProduction anyway", statusErr)
+	} else {
+		logger.Infof("TEE machine %s current on-chain status=%d (production=%d)", teeID.Hex(), status, teeStatusProduction)
+		if status == teeStatusProduction {
+			logger.Infof("TEE machine %s already in production, skipping ToProduction", teeID.Hex())
+			return nil
+		}
+	}
+
 	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
 	if err != nil {
 		return errors.Errorf("%s", err)
@@ -332,6 +359,7 @@ func ToProduction(s *support.Support, toProductionProof *machinemanager.ITeeAvai
 
 	tx, err := s.TeeMachineRegistry.ToProduction(opts, *toProductionProof)
 	if err != nil {
+		diagToProductionRevert(s, opts, *toProductionProof)
 		return errors.Errorf("%s", err)
 	}
 	_, err = support.CheckTx(tx, s.ChainClient)

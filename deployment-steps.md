@@ -18,10 +18,18 @@ The extension's Dockerfiles consume both repos from `../../tee-node/`.
 ```text
 <workspace>/tee/
 ├── tee-node/         # gitlab.com/flarenetwork/tee/tee-node, tag v0.0.20
-├── tee-proxy/        # gitlab.com/flarenetwork/tee/tee-proxy, tag v0.0.17
+├── tee-proxy/        # gitlab.com/flarenetwork/tee/tee-proxy, main @ a3adb51 or newer
 └── extensions/
     └── <your-extension>/
 ```
+
+> [!IMPORTANT]
+> Use `tee-proxy` at commit `a3adb51` (or any commit after tag `v0.0.17`) — not the
+> `v0.0.17` tag itself. `v0.0.17`'s Dockerfile has the build context wrong
+> (`WORKDIR /app/tee-proxy` before `COPY . .`) and `COPY config.example.toml`
+> in the final stage points at a path that doesn't exist outside the builder.
+> Commit `a3adb51` ("chore: use local tee-node via replace directive in build")
+> fixes both. A `v0.0.18` tag has not been cut yet — once it is, update this line.
 
 ## 2. Generate a funded deployer key
 
@@ -64,20 +72,35 @@ Copies `.env.<chain>` → `.env`, which all scripts auto-load.
 
 ## 4. Register the extension on-chain
 
-> [!IMPORTANT]
-> **First-time clone only — generate Go contract bindings before running `pre-build.sh`:**
->
-> ```bash
-> bash ./scripts/generate-bindings.sh
-> ```
->
-> `go/tools/pkg/contracts/sign/autogen.go` is `.gitignore`d and produced by this script. On a fresh checkout it doesn't exist, and `pre-build.sh` step 0 (pre-flight compile) fails with `undefined: sign.InstructionSender`, `undefined: sign.NewInstructionSender`, etc. `pre-build.sh` _does_ run `generate-bindings.sh` as its step 1, but step 0 comes first and needs the file already in place. Run the bindings script once after cloning and you won't hit this again.
-
 ```bash
 bash ./scripts/pre-build.sh
 ```
 
-Compiles Solidity, deploys `InstructionSender`, registers the extension on-chain. Writes `EXTENSION_ID` and `INSTRUCTION_SENDER` to `config/extension.env`.
+Generates Go bindings, compiles Solidity, deploys `InstructionSender`, and registers the extension on-chain. Writes `EXTENSION_ID` and `INSTRUCTION_SENDER` to `config/extension.env`.
+
+> [!WARNING]
+> **`pre-build.sh` is destructive — it mints a NEW extension and a NEW InstructionSender on every run, and overwrites `config/extension.env`.**
+>
+> Re-running it against an existing TEE (the normal case on a shared Coston/Coston2 proxy, where the proxy's signing key is persistent) orphans the TEE: the TEE record on-chain stays bound to the previous extension, while the new InstructionSender points at the empty new extension. `post-build.sh` will then skip `ToProduction` (the TEE is already `PRODUCTION` on the old extension) and `test.sh` will revert with `MachineManager.TooMany()` because `getRandomTeeIds(newExtId, 1)` finds zero active TEEs.
+>
+> The script now refuses to clobber an existing `config/extension.env` unless you explicitly opt in:
+>
+> ```bash
+> PRE_BUILD_FORCE=1 ./scripts/pre-build.sh
+> # or:   ./scripts/pre-build.sh --force
+> ```
+>
+> If you hit `TooMany()` from a previous run, run the diagnostic (from `go/tools`):
+>
+> ```bash
+> go run ./cmd/check-tee-state \
+>     -a ../../config/<chain>/deployed-addresses.json \
+>     -c "$CHAIN_URL" \
+>     -p "$EXT_PROXY_URL" \
+>     -instructionSender "$INSTRUCTION_SENDER"
+> ```
+>
+> It prints the InstructionSender registered against the TEE's actual extension — paste that address into `config/extension.env` and skip back to `test.sh`.
 
 Read the new values — `EXTENSION_ID` is part of the hand-off in Step 6:
 
@@ -149,22 +172,8 @@ If `extensionId` is wrong, ask the VM operator to restart the container with the
 
 ## 8. Register the TEE machine
 
-> [!WARNING]
-> Before running, ensure `scripts/post-build.sh` invokes `register-tee` with `-command rRap` (not the default `rap`):
->
-> ```bash
-> go run ./cmd/register-tee \
->     -a "$ADDRESSES_FILE" \
->     -c "$CHAIN_URL" \
->     -p "$EXT_PROXY_URL" \
->     -h "${EXT_PROXY_HOST_URL:-$EXT_PROXY_URL}" \
->     -ep "$NORMAL_PROXY_URL" \
->     -state "$PROJECT_DIR/config/register-tee.state" \
->     -command rRap \
->     || die "Register TEE failed"
-> ```
->
-> Step `a` (availability check) needs a one-time **challenge** — a random number from the contract that the TEE signs to prove it's alive. By default only `r` issues it, but `r` skips itself once the TEE is registered on-chain. So re-runs (image changes, diamond cuts, retries) revert with `Verification.ChallengeExpired`. Capital `R` issues the challenge directly — decoupled from `r` — so re-runs work.
+> [!NOTE]
+> `post-build.sh` already invokes `register-tee` with `-command rRap` (not the default `rap`) — this is a load-bearing detail; don't revert it. Step `a` (availability check) needs a one-time **challenge** — a random number from the contract that the TEE signs to prove it's alive. By default only `r` issues it, but `r` skips itself once the TEE is registered on-chain. So re-runs (image changes, diamond cuts, retries) would revert with `Verification.ChallengeExpired`. Capital `R` issues the challenge directly — decoupled from `r` — so re-runs work.
 
 Run:
 
@@ -196,8 +205,29 @@ Sends test instructions through the deployed TEE and verifies the round-trip.
 
 All extension registrations on that chain are wiped:
 
-1. `bash ./scripts/pre-build.sh` — mints a fresh `EXTENSION_ID`.
+1. `PRE_BUILD_FORCE=1 bash ./scripts/pre-build.sh` — mints a fresh `EXTENSION_ID`. The `--force` opt-in is required because `config/extension.env` still has the now-invalid values from the previous deploy (see Step 4).
 2. Send the new `EXTENSION_ID` to the VM operator. They restart the container with `EXTENSION_ID=<new value>` as a launch-policy env override — no image rebuild needed.
 3. Re-curl `/info` and confirm `extensionId` matches.
 4. `bash ./scripts/post-build.sh`.
 5. `bash ./scripts/test.sh`.
+
+## Troubleshooting
+
+If `test.sh` reverts or `post-build.sh` fails, run the diagnostic before changing anything:
+
+```bash
+cd go/tools
+go run ./cmd/check-tee-state \
+    -a ../../config/<chain>/deployed-addresses.json \
+    -c "$CHAIN_URL" \
+    -p "$EXT_PROXY_URL" \
+    -instructionSender "$INSTRUCTION_SENDER"
+```
+
+It reads (read-only — no transactions) the TEE proxy's `/info`, the on-chain TEE machine record, `InstructionSender._extensionId` (via storage slot 0), and `getActiveTeeMachines` for each extension involved. The output ends with a verdict that maps directly to a fix:
+
+| Symptom | Verdict line | Fix |
+| --- | --- | --- |
+| `test.sh` reverts with `0xd65ac61e` (`MachineManager.TooMany()`) | `MISMATCH: InstructionSender ext=X ≠ TEE on-chain ext=Y` | Set `INSTRUCTION_SENDER` in `config/extension.env` to the address the diag prints under `[TEE record ext=Y]`. |
+| `post-build.sh` reverts with `MachineManager.InvalidTeeStatus()` | `toProduction will revert: status=1 (PRODUCTION)` | TEE is already promoted. Skip post-build entirely, or rely on the idempotency guard in `registration.go` (which short-circuits when status=PRODUCTION). |
+| `check-tee-state` says active set is empty *and* IDs all agree | (no MISMATCH line; "active set was emptied for a non-status reason") | TEE was banned or its version disabled. Investigate via on-chain events; `pause()` → re-promote is the recovery path, but only the TEE machine owner can do it. |

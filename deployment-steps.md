@@ -11,25 +11,35 @@ Linear recipe to deploy a TEE extension to Flare Coston or Coston2. Run the step
 - Bash (Git Bash on Windows works)
 - VPN access to Flare's indexer DB (`35.241.249.150:3306`) — **only required if you run your own `ext-proxy` locally**. If you're using a devops-hosted proxy (the normal Coston/Coston2 path), devops's proxy queries the indexer for you and you never touch it.
 
-## 1. Clone sibling repos
+## 1. Clone the extension repo
 
-The extension's Dockerfiles consume both repos from `../../tee-node/`.
+No sibling repos are required for the Go path — not for building the image, and
+not for the deploy/registration/test tooling. Everything resolves `tee-node`
+and `tee-proxy` from the public `github.com/flare-foundation` repos:
+
+- **Extension image** (`Dockerfile`) and **deploy tooling** (`go/tools/`, used by
+  `pre-build.sh` / `post-build.sh` / `test.sh` / `check-tee-state`) pull them as
+  **Go modules** through `GOPROXY` (`proxy.golang.org`, falling back to `direct`),
+  pinned by hash in `go/go.sum` (`tee-node v0.0.20`) and `go/tools/go.sum`
+  (`tee-node v0.0.20` + `tee-proxy v0.0.17`). No `replace` directives, nothing
+  copied from disk.
+- **Proxy image** (`proxy/Dockerfile`) `git clone`s `tee-proxy` + `tee-node`
+  straight from GitHub at build time (override the refs with the
+  `TEE_PROXY_VERSION` / `TEE_NODE_VERSION` build args).
+
+So a flat checkout of just your extension is enough:
 
 ```text
-<workspace>/tee/
-├── tee-node/         # gitlab.com/flarenetwork/tee/tee-node, tag v0.0.20
-├── tee-proxy/        # gitlab.com/flarenetwork/tee/tee-proxy, main @ a3adb51 or newer
+<workspace>/
 └── extensions/
     └── <your-extension>/
 ```
 
-> [!IMPORTANT]
-> Use `tee-proxy` at commit `a3adb51` (or any commit after tag `v0.0.17`) — not the
-> `v0.0.17` tag itself. `v0.0.17`'s Dockerfile has the build context wrong
-> (`WORKDIR /app/tee-proxy` before `COPY . .`) and `COPY config.example.toml`
-> in the final stage points at a path that doesn't exist outside the builder.
-> Commit `a3adb51` ("chore: use local tee-node via replace directive in build")
-> fixes both. A `v0.0.18` tag has not been cut yet — once it is, update this line.
+> [!NOTE]
+> This applies to the Go path. The **Python and TypeScript** reference image
+> builds are not yet decoupled — their Dockerfiles still build `tee-node` from a
+> local checkout — so they aren't covered by this published-repos-only flow yet.
+> Deploy the Go extension unless you're specifically working on those.
 
 ## 2. Generate a funded deployer key
 

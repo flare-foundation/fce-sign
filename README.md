@@ -9,22 +9,33 @@ An example TEE extension that stores a private key and signs messages with it.
 
 ## Layout & deployable surface
 
-This repo contains three implementations of the same extension:
+This repo contains three implementations of the same extension. All three are
+deployable to Coston/Coston2 — pick which one runs in the TEE by setting
+`LANGUAGE` in `.env.<chain>`:
 
-| Language   | Directory                    | Deployable on Coston/Coston2? |
-| ---------- | ---------------------------- | ----------------------------- |
-| Go         | [`go/`](go/)                 | **Yes** — production target   |
-| Python     | [`python/`](python/)         | No — reference implementation |
-| TypeScript | [`typescript/`](typescript/) | No — reference implementation |
+| Language   | Directory                    | Dockerfile                                              | Notes                                                            |
+| ---------- | ---------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------- |
+| Go         | [`go/`](go/)                 | [`Dockerfile`](Dockerfile)                              | Bit-for-bit reproducible across machines.                        |
+| Python     | [`python/`](python/)         | [`python/Dockerfile`](python/Dockerfile)                | Same-machine reproducible; cross-machine is best-effort.         |
+| TypeScript | [`typescript/`](typescript/) | [`typescript/Dockerfile`](typescript/Dockerfile)        | Same-machine reproducible; cross-machine is best-effort.         |
 
-The **Go** implementation is the one wired into `Dockerfile`, `docker-compose.yaml`,
-and `scripts/*` for the testnet deploy flow described in
-[`testnet-deployment.md`](testnet-deployment.md).
+```bash
+# .env.coston2
+LANGUAGE=python    # or go (default), or typescript
+```
 
-Python and TypeScript implementations are kept as side-by-side references for
-hackathon participants who want to study the protocol in a different language.
-They have their own `Dockerfile` and tests but do **not** deploy via the
-scaffold-aligned flow — they're code-reading material, not deploy artifacts.
+`scripts/start-services.sh` maps `LANGUAGE` to the right Dockerfile via
+`EXTENSION_DOCKERFILE`, which `docker-compose.yaml` then uses for the
+`extension-tee` build. The on-chain registration tooling under `go/tools/`
+runs on the developer machine, never inside the TEE, and stays in Go regardless
+of the language choice.
+
+The cross-machine reproducibility gap on Python/TS comes from pip wheels and
+`node_modules` trees that embed build-host paths and timestamps. The Go path
+sidesteps this by compiling to a single static binary. See
+[`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the full caveats — short version:
+if a different machine rebuilds a Python/TS image, the attested code hash may
+differ and the TEE will need to be re-registered.
 
 ### Running the hackathon-style language tests
 
@@ -69,15 +80,20 @@ Each phase can also be run individually:
 ./scripts/stop-services.sh     # Tear down
 ```
 
+To build a hand-off image for a devops-hosted TEE (instead of the local stack),
+use `./scripts/build-image.sh` — it builds the `LANGUAGE` from `.env`, verifies
+`MODE=0`, and saves a tar. See [`deployment-steps.md`](deployment-steps.md).
+
 ### Prerequisites
 
 - **Docker Desktop** (Linux containers) — for the local stack
 - **Go 1.25.1+** — for the deploy + registration tools in `go/tools/`
 - **Foundry** (`forge`, `cast`, `jq`) — for Solidity compilation and contract bindings
 - **Bash** — Git Bash works on Windows
-- **Sibling repos** at `../../tee-node/` and `../../tee-proxy/` (cloned next to
-  `extensions/` under a shared `tee/` parent — see
-  [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for layout)
+- **No sibling repos needed** — `tee-node` and `tee-proxy` are fetched from the
+  public `github.com/flare-foundation` repos at build time (Go modules pinned in
+  `go.sum`; the proxy image `git clone`s them). A flat checkout of just this repo
+  is enough.
 - **A funded private key** for the target chain. Set as `DEPLOYMENT_PRIVATE_KEY`
   in `.env.<chain>` (no `0x` prefix). Fund at
   [`faucet.flare.network`](https://faucet.flare.network/).
@@ -86,9 +102,11 @@ Each phase can also be run individually:
 
 ### Chain selection
 
-`.env` is a per-chain file. `scripts/use-chain.sh <chain>` copies the active
-chain's template (`.env.coston`, `.env.coston2`, or `.env.example` for local)
-over `.env`. All scripts then source `.env` automatically.
+`.env` is a per-chain file. `scripts/use-chain.sh <chain> [language]` copies the
+active chain's template (`.env.coston` or `.env.coston2`) over `.env`, optionally
+setting `LANGUAGE` (`go`|`python`|`typescript`). Use `--list` to see available
+chains and languages, or `--help` for usage. All scripts then source `.env`
+automatically.
 
 | Chain     | `.env.<chain>`  | Addresses file                          | RPC                                              |
 | --------- | --------------- | --------------------------------------- | ------------------------------------------------ |
@@ -104,8 +122,12 @@ over `.env`. All scripts then source `.env` automatically.
 
 ## Reproducible builds
 
-The Dockerfile is reproducible: same source + same `SOURCE_DATE_EPOCH` yields a
-bit-for-bit identical image. See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md).
+The Go `Dockerfile` is bit-for-bit reproducible: same source + same
+`SOURCE_DATE_EPOCH` yields an identical image on any host. The Python and
+TypeScript Dockerfiles use the same apt snapshot + mtime normalization tricks
+and reach same-machine determinism, but cross-machine bit-for-bit is not
+guaranteed because of compiled pip wheels and varying `node_modules` trees.
+See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md).
 
 ## Troubleshooting
 
@@ -128,5 +150,6 @@ issues:
 | ---------------------------------------------- | ---------------------------------------------------------------- |
 | [`testnet-deployment.md`](testnet-deployment.md) | End-to-end Coston/Coston2 deploy with devops handoff             |
 | [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md)       | `SOURCE_DATE_EPOCH` and reproducible image builds                |
-| [`go/`](go/)                                    | Go extension binary + tooling (production-deployable)            |
-| [`python/`](python/) / [`typescript/`](typescript/) | Reference implementations of the same protocol (no deploy) |
+| [`go/`](go/)                                    | Go extension binary + deploy/registration tooling                |
+| [`python/`](python/)                            | Python extension (deployable; select with `LANGUAGE=python`)     |
+| [`typescript/`](typescript/)                    | TypeScript extension (deployable; select with `LANGUAGE=typescript`) |

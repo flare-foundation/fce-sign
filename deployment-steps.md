@@ -36,10 +36,12 @@ So a flat checkout of just your extension is enough:
 ```
 
 > [!NOTE]
-> This applies to the Go path. The **Python and TypeScript** reference image
-> builds are not yet decoupled — their Dockerfiles still build `tee-node` from a
-> local checkout — so they aren't covered by this published-repos-only flow yet.
-> Deploy the Go extension unless you're specifically working on those.
+> All three languages are sibling-free. The **Python** and **TypeScript** image
+> builds also `git clone` `tee-node` from GitHub at build time (no local
+> checkout) and build from this same dir — `start-services.sh` just points
+> `EXTENSION_DOCKERFILE` at the right one per `LANGUAGE`. The only caveat is
+> reproducibility: the Python/TS images reach same-machine determinism but not
+> cross-machine bit-for-bit parity — see [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md).
 
 ## 2. Generate a funded deployer key
 
@@ -70,15 +72,20 @@ LOCAL_MODE=false
 SIMULATED_TEE=false
 DEPLOYMENT_PRIVATE_KEY=<private key, no 0x prefix>
 INITIAL_OWNER=0x<derived address from Step 2>
+
+LANGUAGE=go                                                          # go | python | typescript (which Dockerfile build-image.sh builds)
 ```
 
-Activate it:
+Activate it (optionally selecting the extension language):
 
 ```bash
-bash ./scripts/use-chain.sh <chain>
+bash ./scripts/use-chain.sh <chain> [go|python|typescript]   # language defaults to go
+bash ./scripts/use-chain.sh --list                           # list available chains + languages
+bash ./scripts/use-chain.sh --help                           # usage
 ```
 
-Copies `.env.<chain>` → `.env`, which all scripts auto-load.
+Copies `.env.<chain>` → `.env` (and sets `LANGUAGE` if you passed one), which all
+scripts auto-load. The language you pick here is what `build-image.sh` builds in Step 5.
 
 ## 4. Register the extension on-chain
 
@@ -88,29 +95,16 @@ bash ./scripts/pre-build.sh
 
 Generates Go bindings, compiles Solidity, deploys `InstructionSender`, and registers the extension on-chain. Writes `EXTENSION_ID` and `INSTRUCTION_SENDER` to `config/extension.env`.
 
-> [!WARNING]
-> **`pre-build.sh` is destructive — it mints a NEW extension and a NEW InstructionSender on every run, and overwrites `config/extension.env`.**
+> [!IMPORTANT]
+> Each run mints a **new** extension + InstructionSender and overwrites `config/extension.env`, so the script refuses to run if that file already exists.
 >
-> Re-running it against an existing TEE (the normal case on a shared Coston/Coston2 proxy, where the proxy's signing key is persistent) orphans the TEE: the TEE record on-chain stays bound to the previous extension, while the new InstructionSender points at the empty new extension. `post-build.sh` will then skip `ToProduction` (the TEE is already `PRODUCTION` on the old extension) and `test.sh` will revert with `MachineManager.TooMany()` because `getRandomTeeIds(newExtId, 1)` finds zero active TEEs.
+> - **First deploy:** run the command above as-is.
+> - **Want a new extension + InstructionSender** (e.g. after a diamond redeploy): opt in with `--force`:
+>   ```bash
+>   bash ./scripts/pre-build.sh --force   # or: PRE_BUILD_FORCE=1 bash ./scripts/pre-build.sh
+>   ```
 >
-> The script now refuses to clobber an existing `config/extension.env` unless you explicitly opt in:
->
-> ```bash
-> PRE_BUILD_FORCE=1 ./scripts/pre-build.sh
-> # or:   ./scripts/pre-build.sh --force
-> ```
->
-> If you hit `TooMany()` from a previous run, run the diagnostic (from `go/tools`):
->
-> ```bash
-> go run ./cmd/check-tee-state \
->     -a ../../config/<chain>/deployed-addresses.json \
->     -c "$CHAIN_URL" \
->     -p "$EXT_PROXY_URL" \
->     -instructionSender "$INSTRUCTION_SENDER"
-> ```
->
-> It prints the InstructionSender registered against the TEE's actual extension — paste that address into `config/extension.env` and skip back to `test.sh`.
+> Forcing a re-run against an existing TEE on a shared proxy orphans it, and `test.sh` later reverts with `MachineManager.TooMany()`. See [Troubleshooting](#troubleshooting) to recover.
 
 Read the new values — `EXTENSION_ID` is part of the hand-off in Step 6:
 
@@ -120,29 +114,36 @@ cat config/extension.env
 
 ## 5. Build the Docker image
 
-Confirm `MODE=0` is the default in your extension's `Dockerfile` (`MODE=0` is the production attestation backend; `MODE=1` produces simulated attestation that FTDC rejects):
+`build-image.sh` builds the image for the language in your `.env` (set by
+`use-chain.sh` in Step 3), pins `SOURCE_DATE_EPOCH` for a reproducible
+`codeHash`, verifies `MODE=0` is baked in (production attestation — FTDC rejects
+`MODE=1`), and saves a tar for the hand-off:
 
-```dockerfile
-ENV MODE=0 CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
+```bash
+bash ./scripts/build-image.sh                 # build .env's LANGUAGE, tag v0.1.0, save tar
+bash ./scripts/build-image.sh -l typescript   # override the language
+bash ./scripts/build-image.sh -v v0.1.1       # set the version/tag
 ```
 
-Then build:
+It writes `sign-extension-<language>-<version>.tar` and prints the image ID to hand to devops.
 
-```powershell
-$env:SOURCE_DATE_EPOCH = (git log -1 --format=%ct)
-docker compose -f docker-compose.yaml build --no-cache extension-tee
-docker tag <your-extension>-extension-tee:latest <your-extension>:v0.1.0
-docker save <your-extension>:v0.1.0 -o <your-extension>-v0.1.0.tar
+<details>
+<summary>Equivalent manual commands</summary>
+
+```bash
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+docker build -f typescript/Dockerfile -t sign-extension-ts:v0.1.0 .   # or Dockerfile / python/Dockerfile
+docker save sign-extension-ts:v0.1.0 -o sign-extension-ts-v0.1.0.tar
 ```
 
-Setting `SOURCE_DATE_EPOCH` makes the build reproducible (same source → same `codeHash`).
+`docker build -t` names + tags in one step (no separate `docker tag`), and
+BuildKit auto-reads `SOURCE_DATE_EPOCH` from the env. Confirm `MODE=0` with:
 
-Verify `MODE=0` is baked into the image:
-
-```powershell
-docker inspect <your-extension>:v0.1.0 --format '{{range .Config.Env}}{{println .}}{{end}}' | Select-String MODE
+```bash
+docker inspect sign-extension-ts:v0.1.0 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MODE
 # expected: MODE=0
 ```
+</details>
 
 ## 6. Deploy the image on a Confidential Space VM
 
@@ -152,7 +153,11 @@ Hand off (or deploy yourself) to a GCP Confidential Space VM with:
 - Workload-launch env: `INITIAL_OWNER`, `CHAIN_URL`, `EXTENSION_ID` (from Step 4), `PROXY_URL` (proxy URL reachable from the TEE)
 - Public HTTPS routed to port `6664` of the proxy container
 
-You receive back the **public proxy URL**. Add it to `.env.<chain>` and re-activate:
+You receive back the **public proxy URL** — which you only learn now, after the
+hand-off. Put it in your `.env.<chain>` template, then re-run `use-chain.sh` so
+the active `.env` picks it up. (`post-build.sh` / `test.sh` read `EXT_PROXY_URL`
+from `.env`; the convention is to edit the chain template, never `.env`
+directly.)
 
 ```bash
 # in .env.<chain>
@@ -160,7 +165,7 @@ EXT_PROXY_URL=<public proxy URL>
 ```
 
 ```bash
-bash ./scripts/use-chain.sh <chain>
+bash ./scripts/use-chain.sh <chain>   # re-copies .env.<chain> → .env, now with EXT_PROXY_URL set
 ```
 
 ## 7. Verify the proxy `/info`
@@ -215,7 +220,7 @@ Sends test instructions through the deployed TEE and verifies the round-trip.
 
 All extension registrations on that chain are wiped:
 
-1. `PRE_BUILD_FORCE=1 bash ./scripts/pre-build.sh` — mints a fresh `EXTENSION_ID`. The `--force` opt-in is required because `config/extension.env` still has the now-invalid values from the previous deploy (see Step 4).
+1. `bash ./scripts/pre-build.sh --force` — mints a fresh `EXTENSION_ID`. The `--force` opt-in is required because `config/extension.env` still has the now-invalid values from the previous deploy (see Step 4).
 2. Send the new `EXTENSION_ID` to the VM operator. They restart the container with `EXTENSION_ID=<new value>` as a launch-policy env override — no image rebuild needed.
 3. Re-curl `/info` and confirm `extensionId` matches.
 4. `bash ./scripts/post-build.sh`.

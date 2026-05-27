@@ -1,6 +1,7 @@
-# Build context must be tee/ (the parent of both tee-node/ and extensions/) so the
-# replace directive `github.com/flare-foundation/tee-node => ../../tee-node` in
-# extensions/sign/go/go.mod resolves at build time.
+# Build context is the sign extension dir (extensions/sign/). The extension
+# module pulls github.com/flare-foundation/tee-node v0.0.20 from the network
+# (verified against go/go.sum) — no on-disk sibling repo or replace directive
+# is needed, so only go/ is copied into the build.
 
 # Pin base image by digest so every build starts from the same bytes
 FROM golang:1.25.1-trixie@sha256:ff83f3762390c2cccb53618ccc18af23e556aff9b1db4428637e9f63287c8171 AS builder
@@ -27,11 +28,10 @@ RUN \
   apt-get install --snapshot "${snapshot}" -y ca-certificates && \
   rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
-# Bring in both modules; tee-node sits next to the sign extension so the replace directive resolves
-COPY --chmod=644 --chown=0:0 tee-node/ ./tee-node/
-COPY --chmod=644 --chown=0:0 extensions/sign/ ./extensions/sign/
+# Copy only the extension's Go module; tee-node is fetched from the network during `go mod download`
+COPY --chmod=644 --chown=0:0 go/ ./go/
 
-WORKDIR /build/extensions/sign/go
+WORKDIR /build/go
 
 RUN go mod download
 RUN go mod verify

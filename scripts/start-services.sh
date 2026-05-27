@@ -49,6 +49,7 @@ fi
 EXTENSION_ID="${EXTENSION_ID:-}"
 PROXY_PRIVATE_KEY="${PROXY_PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
+LANGUAGE="${LANGUAGE:-go}"
 
 if [[ -z "$CHAIN" ]]; then
     if [[ "$LOCAL_MODE" == "true" ]]; then
@@ -62,11 +63,27 @@ case "$CHAIN" in
     *) die "Unknown --chain value: $CHAIN (valid: local, coston, coston2)" ;;
 esac
 
+# Map LANGUAGE -> build context + Dockerfile. docker-compose.yaml reads
+# EXTENSION_CONTEXT and EXTENSION_DOCKERFILE via interpolation.
+#   go         builds from this dir; tee-node is fetched from the network.
+#   python/ts  build from tee/ (../..) because their Dockerfiles still COPY
+#              tee-node from disk to build the server binary + cert.
+case "$LANGUAGE" in
+    go)         export EXTENSION_CONTEXT="$PROJECT_DIR"
+                export EXTENSION_DOCKERFILE="Dockerfile" ;;
+    python)     export EXTENSION_CONTEXT="$PROJECT_DIR/../.."
+                export EXTENSION_DOCKERFILE="extensions/sign/python/Dockerfile" ;;
+    typescript) export EXTENSION_CONTEXT="$PROJECT_DIR/../.."
+                export EXTENSION_DOCKERFILE="extensions/sign/typescript/Dockerfile" ;;
+    *) die "Unknown LANGUAGE: $LANGUAGE (valid: go, python, typescript)" ;;
+esac
+
 [[ -n "$EXTENSION_ID" ]] || die "EXTENSION_ID not set. Run pre-build.sh first or set it manually."
 
 log "Chain:        $CHAIN"
 log "Extension ID: $EXTENSION_ID"
 log "Local mode:   $LOCAL_MODE"
+log "Language:     $LANGUAGE ($EXTENSION_DOCKERFILE)"
 
 # ============================================================
 # Docker Compose mode (default)
@@ -85,19 +102,15 @@ if [[ "$USE_LOCAL" == "false" ]]; then
     log "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
 
     # --- Build tee-proxy image locally if no remote registry is configured ---
+    # Uses the self-contained proxy/Dockerfile, which clones tee-proxy + tee-node
+    # from GitHub at build time — no on-disk sibling repos required. Override the
+    # cloned refs with TEE_PROXY_VERSION / TEE_NODE_VERSION if needed.
     if [[ -z "${REGISTRY:-}" ]]; then
         if ! docker image inspect local/tee-proxy >/dev/null 2>&1; then
-            TEE_ROOT="$(cd "$PROJECT_DIR/../.." && pwd)"
-            TEE_PROXY_DIR="$TEE_ROOT/tee-proxy"
-            TEE_NODE_DIR="$TEE_ROOT/tee-node"
-            if [[ ! -d "$TEE_PROXY_DIR" ]]; then
-                die "Image local/tee-proxy not found and tee-proxy repo not present at $TEE_PROXY_DIR.\n  Either set REGISTRY in .env to pull from a remote registry, or clone the tee-proxy repo into $TEE_ROOT/."
-            fi
-            if [[ ! -d "$TEE_NODE_DIR" ]]; then
-                die "Image local/tee-proxy not found and tee-node repo not present at $TEE_NODE_DIR.\n  The tee-proxy Dockerfile requires tee-node as a build dependency. Clone tee-node into $TEE_ROOT/."
-            fi
-            log "Building local/tee-proxy image from $TEE_PROXY_DIR..."
-            docker build -f "$TEE_PROXY_DIR/Dockerfile" -t local/tee-proxy "$TEE_ROOT" || die "Failed to build tee-proxy image"
+            PROXY_DOCKERFILE="$PROJECT_DIR/proxy/Dockerfile"
+            [[ -f "$PROXY_DOCKERFILE" ]] || die "Image local/tee-proxy not found and proxy Dockerfile missing at $PROXY_DOCKERFILE.\n  Either set REGISTRY in .env to pull from a remote registry, or restore proxy/Dockerfile."
+            log "Building local/tee-proxy image from $PROXY_DOCKERFILE (self-cloning, no siblings)..."
+            docker build -f "$PROXY_DOCKERFILE" -t local/tee-proxy "$PROJECT_DIR/proxy" || die "Failed to build tee-proxy image"
             log "local/tee-proxy image built successfully"
         else
             log "local/tee-proxy image already exists (use 'docker rmi local/tee-proxy' to force rebuild)"

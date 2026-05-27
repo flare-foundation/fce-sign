@@ -63,18 +63,14 @@ case "$CHAIN" in
     *) die "Unknown --chain value: $CHAIN (valid: local, coston, coston2)" ;;
 esac
 
-# Map LANGUAGE -> build context + Dockerfile. docker-compose.yaml reads
-# EXTENSION_CONTEXT and EXTENSION_DOCKERFILE via interpolation.
-#   go         builds from this dir; tee-node is fetched from the network.
-#   python/ts  build from tee/ (../..) because their Dockerfiles still COPY
-#              tee-node from disk to build the server binary + cert.
+# Map LANGUAGE -> Dockerfile. All three build from this dir (docker-compose.yaml
+# pins context: .) and fetch tee-node from the network — no sibling repos.
+# docker-compose.yaml reads EXTENSION_DOCKERFILE via interpolation; leaving
+# LANGUAGE=go gives the default Go path.
 case "$LANGUAGE" in
-    go)         export EXTENSION_CONTEXT="$PROJECT_DIR"
-                export EXTENSION_DOCKERFILE="Dockerfile" ;;
-    python)     export EXTENSION_CONTEXT="$PROJECT_DIR/../.."
-                export EXTENSION_DOCKERFILE="extensions/sign/python/Dockerfile" ;;
-    typescript) export EXTENSION_CONTEXT="$PROJECT_DIR/../.."
-                export EXTENSION_DOCKERFILE="extensions/sign/typescript/Dockerfile" ;;
+    go)         export EXTENSION_DOCKERFILE="Dockerfile" ;;
+    python)     export EXTENSION_DOCKERFILE="python/Dockerfile" ;;
+    typescript) export EXTENSION_DOCKERFILE="typescript/Dockerfile" ;;
     *) die "Unknown LANGUAGE: $LANGUAGE (valid: go, python, typescript)" ;;
 esac
 

@@ -6,7 +6,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/ethereum/go-ethereum v1.16.7
 	github.com/flare-foundation/go-flare-common v1.2.1-0.20260424152410-876c09e65794
-	github.com/flare-foundation/tee-node v0.0.0
+	github.com/flare-foundation/tee-node v0.0.20
 	golang.org/x/crypto v0.43.0
 )
 
@@ -51,7 +51,3 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/gorm v1.31.0 // indirect
 )
-
-// Sign extension is at tee/extensions/sign/go/, tee-node is at tee/tee-node/,
-// so the relative path is three levels up.
-replace github.com/flare-foundation/tee-node => ../../../tee-node

@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.16.7
 	github.com/flare-foundation/go-flare-common v1.2.1-0.20260424152410-876c09e65794
 	github.com/flare-foundation/tee-node v0.0.20
-	github.com/flare-foundation/tee-proxy v0.0.1
+	github.com/flare-foundation/tee-proxy v0.0.17
 	github.com/joho/godotenv v1.5.1
 	github.com/pkg/errors v0.9.1
 	sign-extension v0.0.0
@@ -89,10 +89,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
 
-// Sign tools are at tee/extensions/sign/go/tools/, dependencies are siblings
-// of tee/, so the relative paths are four levels up.
-replace (
-	github.com/flare-foundation/tee-node => ../../../../tee-node
-	github.com/flare-foundation/tee-proxy => ../../../../tee-proxy
-	sign-extension => ../
-)
+// sign-extension is the extension module in this same repo (one level up).
+// tee-node and tee-proxy are fetched from the network (verified against go.sum)
+// — no on-disk sibling clones required.
+replace sign-extension => ../

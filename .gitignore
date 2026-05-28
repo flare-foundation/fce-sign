@@ -37,6 +37,12 @@ go/tools/allow-*
 go/tools/deploy-*
 go/tools/register-*
 go/tools/run-*
+go/tools/*.exe
+go/tools/check-tee-state*
+!go/tools/cmd/check-tee-state/
+
+# Hand-off image tarballs (produced by scripts/build-image.sh)
+sign-extension-*.tar
 
 # Private deployment notes
 DEPLOYMENT.md

@@ -1,10 +1,11 @@
 # Sign extension stack — Coston2/Coston/local devnet.
 #
-# Build context is ../.. (parent of tee-node/ and extensions/) so the reproducible
-# Dockerfile can COPY both repos. The Docker build itself does NOT use LANGUAGE
-# switching; only Go is production-deployable. To build the python/typescript
-# reference implementations, run `docker build` against their own Dockerfiles
-# directly (python/Dockerfile, typescript/Dockerfile).
+# The language of the extension-tee container is selected by LANGUAGE in .env
+# (go|python|typescript). start-services.sh maps that into EXTENSION_DOCKERFILE
+# before invoking compose. All three Dockerfiles build from this dir and fetch
+# tee-node from the network (Go module / git clone) — no on-disk sibling repos.
+# The default below preserves the Go path when EXTENSION_DOCKERFILE is unset
+# (e.g. when running compose directly).
 #
 # Usage:
 #   docker compose up -d                                                       # local devnet
@@ -36,8 +37,8 @@ services:
 
   extension-tee:
     build:
-      context: ../..
-      dockerfile: extensions/sign/Dockerfile
+      context: .
+      dockerfile: ${EXTENSION_DOCKERFILE:-Dockerfile}
       args:
         SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH}
     env_file:

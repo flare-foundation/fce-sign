@@ -72,16 +72,54 @@ ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESS
 log "Chain URL:      $CHAIN_URL"
 log "Addresses file: $ADDRESSES_FILE"
 
-# --- Step 0: Pre-flight check ---
-step 0 "Pre-flight check"
+# --- Guard: refuse to clobber an existing extension config ---
+# pre-build.sh mints a NEW extension and a NEW InstructionSender on every run
+# and overwrites $CONFIG_OUTPUT. On a shared TEE proxy (the normal Coston/Coston2
+# path) the TEE record is permanently bound to whichever extension it was first
+# registered against, so a re-run orphans the existing TEE from the new
+# InstructionSender (test.sh then reverts with MachineManager.TooMany).
+FORCE=0
+for arg in "$@"; do
+    [[ "$arg" == "--force" ]] && FORCE=1
+done
+if [[ "${PRE_BUILD_FORCE:-0}" == "1" ]]; then
+    FORCE=1
+fi
+if [[ -f "$CONFIG_OUTPUT" ]] && grep -q "^EXTENSION_ID=" "$CONFIG_OUTPUT" 2>/dev/null && [[ "$FORCE" != "1" ]]; then
+    {
+        echo -e "${RED}[pre-build] $CONFIG_OUTPUT already exists.${NC}"
+        echo "  Existing values:"
+        sed -n 's/^/    /p' "$CONFIG_OUTPUT"
+        echo ""
+        echo "  Re-running pre-build.sh mints a NEW extension + InstructionSender and overwrites"
+        echo "  this file. Any TEE already registered against the existing extension will be"
+        echo "  orphaned — post-build.sh will skip ToProduction (status=PRODUCTION) and test.sh"
+        echo "  will revert with MachineManager.TooMany on the empty new-extension active set."
+        echo ""
+        echo "  To re-deploy anyway (e.g. after a diamond redeploy wiped registrations):"
+        echo "    PRE_BUILD_FORCE=1 ./scripts/pre-build.sh"
+        echo "    # or:   ./scripts/pre-build.sh --force"
+        echo ""
+        echo "  To recover an orphaned setup, see cmd/check-tee-state (from go/tools)."
+    } >&2
+    exit 1
+fi
+
+# --- Step 0: Generate Go bindings from Solidity contract ---
+# MUST run before any `go run`/`go build` below: the binding output
+# (go/tools/pkg/contracts/sign/autogen.go) is .gitignored and is imported
+# transitively by deploy-contract, register-extension, etc. Running the
+# pre-flight compile before this step fails on a fresh clone with
+# `undefined: sign.InstructionSender`.
+step 0 "Generate Go bindings"
+"$SCRIPT_DIR/generate-bindings.sh" || die "Binding generation failed"
+
+# --- Step 1: Pre-flight check ---
+step 1 "Pre-flight check"
 cd "$PROJECT_DIR/go/tools"
 if ! go run ./cmd/deploy-contract -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --preflight-only 2>&1; then
     die "Pre-flight check failed — fix the issues above before deploying"
 fi
-
-# --- Step 1: Generate Go bindings from Solidity contract ---
-step 1 "Generate Go bindings"
-"$SCRIPT_DIR/generate-bindings.sh" || die "Binding generation failed"
 
 # --- Step 2: Deploy InstructionSender ---
 step 2 "Deploy InstructionSender contract"

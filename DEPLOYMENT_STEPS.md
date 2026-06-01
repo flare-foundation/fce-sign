@@ -6,11 +6,10 @@ Linear recipe to deploy a TEE extension to Flare Coston or Coston2. Run the step
 > **Two deployment modes.** The main path (Steps 1–9) deploys to a real **GCP
 > Confidential Space VM** — production attestation (`SIMULATED_TEE=false`, real
 > `codeHash`), proxy hosted by devops. For development you can instead run the TEE
->
-> - proxy as **local Docker containers** with a **simulated** TEE
->   (`SIMULATED_TEE=true`, `MODE=1`) exposed via **ngrok** — no VM and no devops
->   hand-off. Steps 1–4 and 8–9 are identical; only Steps 5–7 change. See
->   [Local / simulated deployment](#local--simulated-deployment-docker--ngrok).
+> and proxy as **local Docker containers** with a **simulated** TEE
+> (`SIMULATED_TEE=true`, `MODE=1`) exposed via **ngrok** — no VM and no devops
+> hand-off. Steps 1–4 and 8–9 are identical; only Steps 5–7 change. See
+> [Local / simulated deployment](#local--simulated-deployment-docker--ngrok).
 
 ## Prerequisites
 
@@ -19,27 +18,28 @@ Linear recipe to deploy a TEE extension to Flare Coston or Coston2. Run the step
 - 🔨 Foundry (`forge`, `cast`)
 - `jq`
 - Bash (Git Bash on Windows works)
-- Abelium VPN access to Flare's **indexer DB** — the `ext-proxy` queries it in **both** deployment flows (deployed and local). Host + read-only creds are in [Indexer DB credentials](#indexer-db-credentials).
+- **Abelium VPN** — required **only when deploying against Coston** (Coston's indexer DB is VPN-gated). **Coston2's** indexer is reachable without VPN, so for a Coston2 deploy you don't need it. The `ext-proxy` queries the indexer in both deployment modes (deployed and local); host + read-only creds are in [Indexer DB credentials](#indexer-db-credentials).
 
 ## Indexer DB credentials
 
 Both flows run the same `ext-proxy`, and the proxy queries Flare's **indexer DB**
-to find TEE events and instruction responses — so you need these creds either way
-(the deployed and local flows differ only in `SIMULATED_TEE` / `MODE`). The proxy
-reads them from `config/proxy/extension_proxy.coston2.docker.toml`, which
-`docker-compose.coston2.yaml` mounts as the container's `config.toml`. That file is
-**gitignored** (it holds DB creds), so create it from the example and fill the
-`[db]` block:
+to find TEE events and instruction responses — so you need these creds in either
+flow (deployed and local). The proxy reads them from
+`config/proxy/extension_proxy.<chain>.docker.toml`, which the chain's compose
+overlay mounts as the container's `config.toml`. Those files are **gitignored**
+(they hold DB creds), so create the one for your chain and fill its `[db]` block.
+The creds are **chain-specific** (read-only, throwaway hackathon creds — fine to
+commit/use as-is) — **don't cross them between chains**.
+
+### Coston2
+
+Reachable **without VPN**. Copy the bundled example, then confirm its `[db]` and
+`[addresses]` blocks:
 
 ```bash
 cp config/proxy/extension_proxy.coston2.docker.toml.example \
    config/proxy/extension_proxy.coston2.docker.toml
 ```
-
-These are the **hackathon indexer DB credentials for Coston2 only** (read-only,
-throwaway — fine to commit/use as-is). They go in `extension_proxy.coston2.docker.toml`;
-**Coston has its own indexer** (different host/creds), so don't reuse these for a
-`coston` proxy config:
 
 ```toml
 [db]
@@ -49,11 +49,39 @@ database = "indexer"
 username = "hackathon_user_90"
 password = "VitU4PH0+qMMXFMklo5iEJMD"
 log_queries = false
+
+[addresses]
+flare_systems_manager = "0xA90Db6D10F856799b10ef2A77EBCbF460aC71e52"
+relay                 = "0xa10B672D1c62e5457b17af63d4302add6A99d7dE"
+voter_registry        = "0x6a0AF07b7972177B176d3D422555cbc98DfDe914"
 ```
 
-Reaching the indexer host may require Abelium VPN access. If this block is missing or
-wrong, the proxy can't read the chain indexer and `test.sh` fails the round-trip
-(the proxy never sees the instruction responses).
+### Coston
+
+Requires **Abelium VPN** — this indexer host is VPN-gated. There's no bundled
+example for Coston, so create `extension_proxy.coston.docker.toml` from the Coston2
+one, set `chain_id = 16`, and use this `[db]` and `[addresses]`:
+
+```toml
+[db]
+host     = "35.241.249.150"
+port     = 3306
+database = "indexer"
+username = "indexer-reader"
+password = "sMgYpa2Eh2u3cRZg"
+log_queries = false
+
+[addresses]
+flare_systems_manager = "0x85680Dd93755Fe5d0789773fd0896cEE51F9e358"
+relay                 = "0x051f214D346Cfd97B107BECb87E2B35D1b4287E9"
+voter_registry        = "0x42F4526BFC6f892DB515a832a52eFc9edFADf6c0"
+```
+
+**Only the Coston indexer (`35.241.249.150`) is VPN-gated** — reaching it needs
+**Abelium VPN**. The **Coston2** indexer (`34.38.42.208`) is reachable without VPN.
+If the `[db]` block is missing or wrong (or you can't reach the host), the proxy
+can't read the chain indexer and `test.sh` fails the round-trip (the proxy never
+sees the instruction responses).
 
 ## 1. Repository layout & dependencies
 
@@ -362,9 +390,10 @@ Everything else is identical. In particular:
 
 4. **Configure the proxy's indexer DB.** ⚠️ Load-bearing. `start-services.sh` (next
    step) runs your own ext-proxy, which queries the indexer directly. Create
-   `config/proxy/extension_proxy.coston2.docker.toml` and fill its `[db]` block —
-   see [Indexer DB credentials](#indexer-db-credentials). Without it the proxy can't
-   read the chain indexer and `test.sh` fails the round-trip.
+   `config/proxy/extension_proxy.<chain>.docker.toml` and fill its `[db]` block —
+   see [Indexer DB credentials](#indexer-db-credentials) (Coston2 and Coston have
+   **different** creds). Without it the proxy can't read the chain indexer and
+   `test.sh` fails the round-trip.
 
 5. **Start the local containers** (Docker Desktop must be running). `start-services.sh`
    builds the extension image for your `LANGUAGE` and runs redis + ext-proxy +

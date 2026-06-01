@@ -16,9 +16,11 @@ Linear recipe to deploy a TEE extension to Flare Coston or Coston2. Run the step
 - 🐳 Docker Desktop (Linux containers)
 - 🐹 Go 1.25.1+
 - 🔨 Foundry (`forge`, `cast`)
-- `jq`
+- `jq` and `curl`
 - Bash (Git Bash on Windows works)
 - **Abelium VPN** — required **only when deploying against Coston** (Coston's indexer DB is VPN-gated). **Coston2's** indexer is reachable without VPN, so for a Coston2 deploy you don't need it. The `ext-proxy` queries the indexer in both deployment modes (deployed and local); host + read-only creds are in [Indexer DB credentials](#indexer-db-credentials).
+- **ngrok** — only for the **local / simulated** flow ([Local / simulated deployment](#local--simulated-deployment-docker--ngrok)). A free account is enough; its reserved domain gives a stable public URL for your local proxy.
+- A **GCP Confidential Space VM** (or a devops contact to hand the image off to) — only for the **deployed** flow ([Step 6](#6-deploy-the-image-on-a-confidential-space-vm)).
 
 ## Indexer DB credentials
 

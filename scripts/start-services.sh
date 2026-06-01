@@ -24,13 +24,13 @@ log()  { echo -e "${GREEN}[start-services]${NC} $*"; }
 die()  { echo -e "${RED}[start-services] ERROR:${NC} $*" >&2; exit 1; }
 
 USE_LOCAL=false
-CHAIN="${CHAIN:-}"
+CHAIN_ARG=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --local) USE_LOCAL=true; shift ;;
         --chain) [[ $# -ge 2 ]] || die "--chain requires a value (local|coston|coston2)"
-                 CHAIN="$2"; shift 2 ;;
-        --chain=*) CHAIN="${1#--chain=}"; shift ;;
+                 CHAIN_ARG="$2"; shift 2 ;;
+        --chain=*) CHAIN_ARG="${1#--chain=}"; shift ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
@@ -45,6 +45,10 @@ CONFIG_FILE="$PROJECT_DIR/config/extension.env"
 if [[ -f "$CONFIG_FILE" ]]; then
     source "$CONFIG_FILE"
 fi
+
+# Chain precedence: an explicit --chain wins; otherwise use CHAIN from .env
+# (set by use-chain.sh); otherwise fall back to the LOCAL_MODE default below.
+CHAIN="${CHAIN_ARG:-${CHAIN:-}}"
 
 EXTENSION_ID="${EXTENSION_ID:-}"
 PROXY_PRIVATE_KEY="${PROXY_PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
@@ -127,7 +131,14 @@ if [[ "$USE_LOCAL" == "false" ]]; then
             ;;
     esac
 
-    docker compose "${COMPOSE_FILES[@]}" up -d --build || die "docker compose up failed"
+    # --force-recreate is required, not just convenient: the proxy fetches the
+    # node's TEE info (incl. extensionId) ONCE at startup and serves it from
+    # /info thereafter. A plain `up -d` recreates extension-tee when its config
+    # changes but leaves the already-running ext-proxy untouched, so the proxy
+    # keeps serving a stale extensionId after you re-run pre-build.sh — which
+    # surfaces as the "EXTENSION_ID not found in proxy /info response" warning
+    # below. Recreating ext-proxy forces it to re-fetch the current TEE info.
+    docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate || die "docker compose up failed"
 
     E2E="$SCRIPT_DIR/e2e.sh"
     EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"

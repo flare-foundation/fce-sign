@@ -8,6 +8,7 @@ vendor/
 .env
 .env.*
 !.env.example
+!.env.local.coston
 
 # Coston/Coston2 proxy configs (contain DB credentials)
 config/proxy/extension_proxy.toml

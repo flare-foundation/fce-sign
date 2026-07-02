@@ -48,8 +48,8 @@ cp config/proxy/extension_proxy.coston2.docker.toml.example \
 host     = "34.38.42.208"
 port     = 3306
 database = "indexer"
-username = "hackathon_user_90"
-password = "VitU4PH0+qMMXFMklo5iEJMD"
+username = ""
+password = ""
 log_queries = false
 
 [addresses]
@@ -69,8 +69,8 @@ one, set `chain_id = 16`, and use this `[db]` and `[addresses]`:
 host     = "35.241.249.150"
 port     = 3306
 database = "indexer"
-username = "indexer-reader"
-password = "sMgYpa2Eh2u3cRZg"
+username = ""
+password = ""
 log_queries = false
 
 [addresses]

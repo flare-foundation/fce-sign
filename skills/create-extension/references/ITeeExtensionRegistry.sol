@@ -64,10 +64,12 @@ interface ITeeExtensionRegistry {
         returns (bytes32 _instructionId);
 
     /**
-     * Get number of registered TEE extensions.
-     * @return The number of registered TEE extensions.
+     * Get the next public extension ID to be assigned. Public extension IDs are
+     * assigned from FIRST_PUBLIC_EXTENSION_ID (0x10000) upward; IDs below that
+     * are reserved for system/reserved extensions.
+     * @return The next public extension ID.
      */
-    function extensionsCounter()
+    function nextPublicExtensionId()
         external view
         returns (uint256);
 

@@ -86,23 +86,20 @@ if [[ "${PRE_BUILD_FORCE:-0}" == "1" ]]; then
     FORCE=1
 fi
 if [[ -f "$CONFIG_OUTPUT" ]] && grep -q "^EXTENSION_ID=" "$CONFIG_OUTPUT" 2>/dev/null && [[ "$FORCE" != "1" ]]; then
-    {
-        echo -e "${RED}[pre-build] $CONFIG_OUTPUT already exists.${NC}"
-        echo "  Existing values:"
-        sed -n 's/^/    /p' "$CONFIG_OUTPUT"
-        echo ""
-        echo "  Re-running pre-build.sh mints a NEW extension + InstructionSender and overwrites"
-        echo "  this file. Any TEE already registered against the existing extension will be"
-        echo "  orphaned — post-build.sh will skip ToProduction (status=PRODUCTION) and test.sh"
-        echo "  will revert with MachineManager.TooMany on the empty new-extension active set."
-        echo ""
-        echo "  To re-deploy anyway (e.g. after a diamond redeploy wiped registrations):"
-        echo "    PRE_BUILD_FORCE=1 ./scripts/pre-build.sh"
-        echo "    # or:   ./scripts/pre-build.sh --force"
-        echo ""
-        echo "  To recover an orphaned setup, see cmd/check-tee-state (from go/tools)."
-    } >&2
-    exit 1
+    # A valid extension.env already exists. Re-minting here would orphan any TEE
+    # already registered against the existing extension (post-build.sh would skip
+    # ToProduction and test.sh would revert with MachineManager.TooMany). So the
+    # idempotent default is to REUSE the existing extension and skip the mint —
+    # full-setup.sh continues to the next phases. Use --force to re-mint.
+    log "$CONFIG_OUTPUT already exists — reusing it (skipping mint)."
+    sed -n 's/^/    /p' "$CONFIG_OUTPUT"
+    echo ""
+    echo "  Re-minting would orphan any TEE already registered against this extension."
+    echo "  To force a fresh extension + InstructionSender (e.g. after a diamond redeploy"
+    echo "  wiped registrations):"
+    echo "    PRE_BUILD_FORCE=1 ./scripts/pre-build.sh    # or: ./scripts/pre-build.sh --force"
+    echo "  To recover an orphaned setup, see cmd/check-tee-state (from go/tools)."
+    exit 0
 fi
 
 # --- Step 0: Generate Go bindings from Solidity contract ---

@@ -26,7 +26,7 @@ interface ITeeAvailabilityCheck {
  */
 interface ITeeMachineRegistry {
 
-    enum TeeStatus { INITIALIZED, PRODUCTION, PAUSED_WITH_PROOF, PAUSED, PAUSED_FOR_UPGRADE, REPLICATING, BANNED }
+    enum TeeStatus { NONE, INITIALIZED, PRODUCTION, SUSPENDED, PAUSED, BANNED }
 
     struct TeeMachineData {
         uint256 extensionId;

@@ -352,8 +352,10 @@ func GetFTDCAvailabilityCheckResult(hostURL string, instructionId common.Hash) (
 
 // teeStatusProduction is the IMachineManager.TeeStatus enum value for
 // "Production" — the state the TEE enters after a successful toProduction call.
-// If the on-chain enum is ever reordered, this constant must be updated to match.
-const teeStatusProduction uint8 = 1
+// On-chain enum: { NONE, INITIALIZED, PRODUCTION, SUSPENDED, PAUSED, BANNED }
+// so PRODUCTION == 2. If the on-chain enum is ever reordered, this constant
+// must be updated to match.
+const teeStatusProduction uint8 = 2
 
 func ToProduction(s *support.Support, toProductionProof *machinemanager.ITeeAvailabilityCheckProof) error {
 	teeID := toProductionProof.RequestBody.TeeId

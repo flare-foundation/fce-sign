@@ -27,15 +27,13 @@ import (
 )
 
 // TeeStatus enum order from the verified MachineManagerFacet source on Coston2.
-// enum TeeStatus { INITIALIZED, PRODUCTION, SUSPENDED, PAUSED,
-//                  PAUSED_FOR_UPGRADE, REPLICATING, BANNED }
+// enum TeeStatus { NONE, INITIALIZED, PRODUCTION, SUSPENDED, PAUSED, BANNED }
 var teeStatusNames = []string{
+	"NONE",
 	"INITIALIZED",
 	"PRODUCTION",
 	"SUSPENDED",
 	"PAUSED",
-	"PAUSED_FOR_UPGRADE",
-	"REPLICATING",
 	"BANNED",
 }
 
@@ -210,9 +208,9 @@ func verdict(proxy, is, onchain *big.Int, onchainErr error, status uint8, status
 		fmt.Println("    → post-build.sh will request attestations against the wrong extension.")
 		mismatch = true
 	}
-	if statusErr == nil && status != 0 && status != 3 { // not INITIALIZED, not PAUSED
-		fmt.Printf("  toProduction will revert: status=%d (%s); toProduction requires INITIALIZED(0) or PAUSED(3).\n", status, statusName(status))
-		if status == 1 {
+	if statusErr == nil && status != 1 && status != 4 { // not INITIALIZED, not PAUSED
+		fmt.Printf("  toProduction will revert: status=%d (%s); toProduction requires INITIALIZED(1) or PAUSED(4).\n", status, statusName(status))
+		if status == 2 {
 			fmt.Println("    → TEE is already in PRODUCTION. If active set contains it, you're done — skip post-build's `p` step.")
 			fmt.Println("    → If active set is empty (TooMany), the TEE is orphaned — see mismatches above, or call pause() then re-promote.")
 		}
